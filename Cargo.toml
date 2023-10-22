@@ -1,0 +1,25 @@
+[package]
+name = "bugs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bson = "2.7.0"
+bytemuck = { version = "1.14.0", features = ["derive"] }
+env_logger = "0.10.0"
+log = "0.4.20"
+nalgebra-glm = "0.18.0"
+pollster = "0.3.0"
+serde = "1.0.189"
+serde_derive = "1.0.189"
+shipyard = "0.6.2"
+wgpu = "0.17.1"
+winit = { version = "0.29.2", features = ["rwh_05"] }
+raw-window-handle = "0.5.2"
+num-traits = "0.2"
+num-derive = "0.4"
+noise = "0.8.2"
+std140 = "0.2.6"
+rand = "0.8.5"
