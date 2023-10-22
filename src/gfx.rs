@@ -17,6 +17,11 @@ pub struct Gfx {
 	pub queue: wgpu::Queue,
 	pub config: wgpu::SurfaceConfiguration,
 	pub size: winit::dpi::PhysicalSize<u32>,
+	// pub egui_platform: egui_winit_platform::Platform,
+	// pub egui_renderpass: egui_wgpu_backend::RenderPass,
+
+	// pub text_brush: wgpu_text::TextBrush,
+
 	// The window must be declared after the surface so
 	// it gets dropped after it as the surface contains
 	// unsafe references to the window's resources.
@@ -80,6 +85,24 @@ impl Gfx {
 		
 		surface.configure(&device, &config);
 
+		// let egui_platform = egui_winit_platform::Platform::new(egui_winit_platform::PlatformDescriptor {
+		// 	physical_width: window.window.inner_size().width,
+		// 	physical_height: window.window.inner_size().height,
+		// 	scale_factor: window.window.scale_factor(),
+		// 	font_definitions: Default::default(),
+		// 	style: Default::default()
+		// });
+
+		// let egui_renderpass = egui_wgpu_backend::RenderPass::new(&device, config.format, 1);
+
+		// let font: &[u8] = include_bytes!("Hack-Regular.ttf");
+		// let text_brush = wgpu_text::BrushBuilder::using_font_bytes(font).unwrap().build(
+		// 	&device,
+		// 	config.width,
+		// 	config.height,
+		// 	config.format
+		// ).;
+
 		Self {
 			window,
 			surface,
@@ -87,6 +110,9 @@ impl Gfx {
 			queue,
 			config,
 			size,
+			// text_brush,
+			// egui_platform,
+			// egui_renderpass
 		}
 	}
 	
@@ -123,6 +149,19 @@ impl Gfx {
 
 			state.render(&mut context);
 		}
+
+		// {
+		// 	self.egui_platform.begin_frame();
+		// 	state.ui(&self.egui_platform.context());
+		// 	let full_output = self.egui_platform.end_frame(Some(&self.window.window));
+		// 	let paint_jobs = self.egui_platform.context().tessellate(full_output.shapes);
+
+		// 	let screen_descriptor = egui_wgpu_backend::ScreenDescriptor {
+		// 		physical_width: self.config.width,
+		// 		physical_height: self.config.height,
+		// 		scale_factor: self.window.window.scale_factor() as f32,
+		// 	};
+		// }
 		
 		self.queue.submit(std::iter::once(encoder.finish()));
 		output.present();

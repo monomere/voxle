@@ -4,7 +4,7 @@ pub trait State {
 	fn load(&mut self, _context: &mut LoadContext) {}
 	fn update(&mut self, _context: &mut UpdateContext) {}
 	fn render<'a>(&'a self, _context: &mut gfx::RenderContext<'a>) { }
-	fn ui(&self, _context: &mut egui::Context) { }
+	fn ui(&self, _context: &egui::Context) { }
 }
 
 pub struct StateStack {
@@ -43,6 +43,12 @@ impl State for StateStack {
 	fn render<'a>(&'a self, context: &mut gfx::RenderContext<'a>) {
 		if let Some(top) = self.stack.last() {
 			top.render(context)
+		}
+	}
+
+	fn ui(&self, context: &egui::Context) {
+		if let Some(top) = self.stack.last() {
+			top.ui(context)
 		}
 	}
 }

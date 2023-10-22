@@ -169,9 +169,3 @@ impl<'a, 'b> GameRenderContext<'a, 'b> {
 		ChunkRenderContext::begin(mode, self.renderer, self.render_pass)
 	}
 }
-
-
-// impl gfx::Renderer<GameRendererMode> for GameRenderer {
-// 	fn on_use<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, mode: GameRendererMode) {
-	// }
-// }
