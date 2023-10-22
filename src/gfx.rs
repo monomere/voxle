@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 
 use wgpu::util::DeviceExt;
-use winit::raw_window_handle::{HasWindowHandle, HasDisplayHandle};
 
 use crate::{scene::State, Window};
 
@@ -134,6 +133,7 @@ impl Gfx {
 
 pub mod graph;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Texture {
 	texture: wgpu::Texture,

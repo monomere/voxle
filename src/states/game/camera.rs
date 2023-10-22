@@ -10,6 +10,9 @@ pub struct CameraController {
 	capturing: bool,
 	velocity: glm::Vec3,
 	smooth: bool,
+	time_since_last_forward_press: f32,
+	sprinting_double_press: bool,
+	is_sprinting: bool,
 	acceleration: f32
 }
 
@@ -21,6 +24,9 @@ impl CameraController {
 			capturing: false,
 			velocity: glm::vec3(0.0, 0.0, 0.0),
 			smooth: true,
+			time_since_last_forward_press: f32::INFINITY,
+			sprinting_double_press: false,
+			is_sprinting: false,
 			acceleration: 50.0
 		}
 	}
@@ -41,6 +47,30 @@ impl CameraController {
 			if ctx.input().key(KeyCode::ShiftLeft).held() { res.y -= 1.0; }
 			res
 		};
+
+		if ctx.input().key(KeyCode::KeyW).just_pressed() {
+			if self.time_since_last_forward_press <= 0.2 {
+				self.is_sprinting = true;
+				self.sprinting_double_press = true;
+				self.time_since_last_forward_press = 0.0;
+			}
+		}
+
+		if ctx.input().key(KeyCode::KeyW).just_released() {
+			self.time_since_last_forward_press = 0.0;
+			self.sprinting_double_press = false;
+			self.is_sprinting = false;
+		}
+
+		self.time_since_last_forward_press += dt;
+
+		if ctx.input().key(KeyCode::ControlLeft).held() {
+			self.is_sprinting = true;
+		}
+
+		if ctx.input().key(KeyCode::ControlLeft).just_released() {
+			self.is_sprinting = false || self.sprinting_double_press;
+		}
 
 		if ctx.input().key(KeyCode::KeyN).just_pressed() {
 			self.smooth = !self.smooth;
@@ -72,10 +102,12 @@ impl CameraController {
 			let movement = front * delta.z + right * delta.x + glm::vec3(0.0, delta.y, 0.0);
 
 			if self.smooth {
-				self.velocity += movement * self.acceleration * dt;
+				let mul = if self.is_sprinting { 5.0 } else { 1.0 };
 
-				if self.velocity.magnitude_squared() > self.max_speed * self.max_speed {
-					self.velocity = self.velocity.normalize() * self.max_speed;
+				self.velocity += movement * mul * self.acceleration * dt;
+
+				if self.velocity.magnitude_squared() > mul * self.max_speed * mul * self.max_speed {
+					self.velocity = self.velocity.normalize() * self.max_speed * mul;
 				}
 
 				self.velocity = glm::lerp(&self.velocity, &glm::vec3(0.0, 0.0, 0.0), (self.max_speed * 0.5 * dt).min(1.0));
@@ -86,6 +118,7 @@ impl CameraController {
 			} else {
 				self.velocity = movement * self.max_speed;
 			}
+
 			camera.position += self.velocity * dt;
 		}
 		

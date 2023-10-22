@@ -1,8 +1,9 @@
-use wgpu::{util::DeviceExt, ShaderStages};
+use wgpu::util::DeviceExt;
+use crate::gfx::{self, graph};
 
-use crate::gfx::{self, graph::{self, Graph}};
+use self::chunk::ChunkRenderContext;
 
-use super::{GameState, chunk::Block};
+pub mod chunk;
 
 pub struct Camera {
 	pub position: glm::Vec3,
@@ -41,27 +42,12 @@ impl Camera {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct BlockVertex {
-	pub position: [f32; 3],
-	pub _pad: u32,
-	pub data: u32,
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct CameraUniform {
 	view_proj: [[f32; 4]; 4],
 }
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct PushConstants {
-	color: [f32; 4]
-}
-
 pub struct GameRenderer {
-	render_pipeline: wgpu::RenderPipeline,
-	wf_render_pipeline: wgpu::RenderPipeline,
+	chunk_renderer: chunk::ChunkRenderer,
 	uniform_buffer: wgpu::Buffer,
 	uniform_bind_group: wgpu::BindGroup,
 	_uniform_bind_group_layout: wgpu::BindGroupLayout,
@@ -69,81 +55,9 @@ pub struct GameRenderer {
 	pub camera: Camera,
 }
 
-fn create_pipeline(
-	gfx: &gfx::Gfx,
-	layout: &wgpu::PipelineLayout,
-	shader: &wgpu::ShaderModule,
-	polymode: wgpu::PolygonMode,
-	depth_format: wgpu::TextureFormat
-) -> wgpu::RenderPipeline {
-	gfx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-		label: None,
-		layout: Some(&layout),
-		vertex: wgpu::VertexState {
-			module: &shader,
-			entry_point: "vs_main",
-			buffers: &[wgpu::VertexBufferLayout {
-				array_stride: std::mem::size_of::<BlockVertex>() as wgpu::BufferAddress,
-				step_mode: wgpu::VertexStepMode::Vertex,
-				attributes: &[
-					// position
-					wgpu::VertexAttribute {
-						format: wgpu::VertexFormat::Float32x3,
-						offset: 0,
-						shader_location: 0
-					},
-					// data
-					wgpu::VertexAttribute {
-						format: wgpu::VertexFormat::Uint32,
-						offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-						shader_location: 1
-					}
-				],
-			}]
-		},
-		fragment: Some(wgpu::FragmentState {
-			module: &shader,
-			entry_point: "fs_main",
-			targets: &[
-				Some(wgpu::ColorTargetState {
-					format: gfx.config.format,
-					blend: None,
-					write_mask: wgpu::ColorWrites::ALL
-				})
-			]
-		}),
-		primitive: wgpu::PrimitiveState {
-			topology: wgpu::PrimitiveTopology::TriangleList,
-			strip_index_format: None,
-			front_face: wgpu::FrontFace::Cw,
-			cull_mode: None, // TODO: fix face vertex ordering in states::game::chunk
-			unclipped_depth: false,
-			polygon_mode: polymode,
-			conservative: false
-		},
-		depth_stencil: Some(wgpu::DepthStencilState {
-			format: depth_format,
-			depth_write_enabled: match polymode {
-				wgpu::PolygonMode::Line => false,
-				_ => true,
-			},
-			depth_compare: match polymode {
-				wgpu::PolygonMode::Line => wgpu::CompareFunction::LessEqual,
-				_ => wgpu::CompareFunction::Less,
-			},
-			stencil: wgpu::StencilState::default(),
-			bias: wgpu::DepthBiasState::default(),
-		}),
-		multisample: wgpu::MultisampleState {
-			count: 4,
-			mask: !0,
-			alpha_to_coverage_enabled: false
-		},
-		multiview: None
-	})
-}
-
 impl GameRenderer {
+	pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
+
 	pub fn new(gfx: &gfx::Gfx) -> Self {
 		let uniform_bind_group_layout = gfx.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
 			label: None,
@@ -166,7 +80,7 @@ impl GameRenderer {
 			aspect: gfx.config.width as f32 / gfx.config.height as f32,
 			fovy: 60.0,
 			znear: 0.01,
-			zfar: 100.0
+			zfar: 1000.0
 		};
 
 		let uniform_buffer = Self::create_uniform_buffer(gfx, bytemuck::bytes_of(&camera.to_uniform()));
@@ -179,24 +93,6 @@ impl GameRenderer {
 				resource: uniform_buffer.as_entire_binding()
 			}]
 		});
-
-		let shader = gfx.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-			label: None,
-			source: wgpu::ShaderSource::Wgsl(std::fs::read_to_string("src/shader_3d.wgsl").unwrap().into())
-		});
-
-		let layout = gfx.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-			label: None,
-			bind_group_layouts: &[&uniform_bind_group_layout],
-			push_constant_ranges: &[wgpu::PushConstantRange {
-				range: 0..std::mem::size_of::<PushConstants>() as u32,
-				stages: ShaderStages::FRAGMENT
-			}]
-		});
-
-		const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
-		let render_pipeline = create_pipeline(gfx, &layout, &shader, wgpu::PolygonMode::Fill, DEPTH_FORMAT);
-		let wf_render_pipeline = create_pipeline(gfx, &layout, &shader, wgpu::PolygonMode::Line, DEPTH_FORMAT);
 
 		let graph_spec = graph::GraphSpec::<super::GameState> {
 			attachments: &[
@@ -217,7 +113,7 @@ impl GameRenderer {
 					},
 				})),
 				("depth", graph::AttachmentSpec::DepthStencil(graph::DepthStencilAttachmentSpec {
-					format: DEPTH_FORMAT,
+					format: Self::DEPTH_FORMAT,
 					depth_ops: Some(|_: &gfx::Gfx| Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: true })),
 					stencil_ops: None,
 					samples: 4 // TODO: allow user to sample count
@@ -236,8 +132,7 @@ impl GameRenderer {
 		};
 	
 		Self {
-			render_pipeline,
-			wf_render_pipeline,
+			chunk_renderer: chunk::ChunkRenderer::new(gfx, &uniform_bind_group_layout),
 			uniform_buffer,
 			uniform_bind_group,
 			_uniform_bind_group_layout: uniform_bind_group_layout,
@@ -259,42 +154,22 @@ impl GameRenderer {
 		ctx.render_graph(&self.graph, game);
 	}
 
-	fn use_pipeline<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, mode: GameRendererMode) {
-		render_pass.set_pipeline(match mode {
-			GameRendererMode::Normal => &self.render_pipeline,
-			GameRendererMode::Wireframe => &self.wf_render_pipeline,
-		});
-
-		let pushed = match mode {
-			GameRendererMode::Normal => PushConstants { color: [1.0, 1.0, 1.0, 1.0] },
-			GameRendererMode::Wireframe => PushConstants { color: [0.0, 0.0, 0.0, 1.0] },
-		};
-
-		render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-		render_pass.set_push_constants(ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(&pushed));
-	}
-
-	fn render_main<'a>(&'a self, _gfx: &gfx::Gfx, render_pass: &mut wgpu::RenderPass<'a>, game: &'a super::GameState) {
-		self.use_pipeline(render_pass, GameRendererMode::Normal);
-		for (_, chunk) in &game.chunks {
-			if let Some(mesh) = &chunk.mesh {
-				mesh.render(render_pass);
-			}
-		}
-
-		self.use_pipeline(render_pass, GameRendererMode::Wireframe);
-		for (_, chunk) in &game.chunks {
-			if let Some(mesh) = &chunk.mesh {
-				mesh.render(render_pass);
-			}
-		}
+	fn render_main<'ctx>(&'ctx self, _gfx: &gfx::Gfx, render_pass: &mut wgpu::RenderPass<'ctx>, game: &'ctx super::GameState) {
+		game.on_render(&mut GameRenderContext { renderer: self, render_pass });
 	}
 }
 
-pub enum GameRendererMode {
-	Normal,
-	Wireframe
+pub struct GameRenderContext<'a, 'b> {
+	renderer: &'a GameRenderer,
+	render_pass: &'b mut wgpu::RenderPass<'a>,
 }
+
+impl<'a, 'b> GameRenderContext<'a, 'b> {
+	pub fn chunk_context<'ctx>(&'ctx mut self, mode: chunk::ChunkRenderMode) -> ChunkRenderContext<'a, 'ctx> {
+		ChunkRenderContext::begin(mode, self.renderer, self.render_pass)
+	}
+}
+
 
 // impl gfx::Renderer<GameRendererMode> for GameRenderer {
 // 	fn on_use<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, mode: GameRendererMode) {

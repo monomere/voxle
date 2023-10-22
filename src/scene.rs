@@ -4,19 +4,22 @@ pub trait State {
 	fn load(&mut self, _context: &mut LoadContext) {}
 	fn update(&mut self, _context: &mut UpdateContext) {}
 	fn render<'a>(&'a self, _context: &mut gfx::RenderContext<'a>) { }
+	fn ui(&self, _context: &mut egui::Context) { }
 }
 
 pub struct StateStack {
 	stack: Vec<Box<dyn State>>
 }
 
+#[allow(dead_code)] // XXX: use
 impl StateStack {
 	pub fn new() -> Self {
 		Self { stack: Vec::new() }
 	}
 
-	pub fn push(&mut self, state: Box<dyn State>, context: &LoadContext) {
+	pub fn push(&mut self, state: Box<dyn State>, _context: &LoadContext) {
 		self.stack.push(state)
+		// TODO: self.stack.top.load()?
 	}
 
 	pub fn pop(&mut self) -> Option<Box<dyn State>> {

@@ -4,7 +4,7 @@ use scene::State;
 use winit::{
 	event::*,
 	event_loop::EventLoop,
-	window::{WindowBuilder, CursorGrabMode}, keyboard::{Key, NativeKey, KeyCode, PhysicalKey}, dpi::LogicalPosition
+	window::{WindowBuilder, CursorGrabMode}, keyboard::{KeyCode, PhysicalKey}, dpi::LogicalPosition
 };
 
 mod gfx;
@@ -13,7 +13,7 @@ mod states;
 
 extern crate nalgebra_glm as glm;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum InputElementState {
 	None,
 	JustPressed,
@@ -40,6 +40,7 @@ impl InputElementState {
 		*self == Self::JustPressed || *self == Self::Held
 	}
 
+	#[allow(dead_code)]
 	pub fn not_held(&self) -> bool {
 		*self == Self::JustReleased || *self == Self::JustPressed
 	}
@@ -58,7 +59,7 @@ pub struct Input {
 	keys: [InputElementState; 256],
 	buttons: [InputElementState; 256],
 	mouse_delta: (f32, f32),
-	close_requested: bool
+	close_requested: bool,
 }
 
 impl Input {
@@ -67,12 +68,26 @@ impl Input {
 			keys: [InputElementState::None; 256],
 			buttons: [InputElementState::None; 256],
 			mouse_delta: (0.0, 0.0),
-			close_requested: false
+			close_requested: false,
 		}
 	}
 
 	fn reset_deltas(&mut self) {
 		self.mouse_delta = (0.0, 0.0);
+		for key in &mut self.keys {
+			*key = match *key {
+				InputElementState::JustPressed => InputElementState::Held,
+				InputElementState::JustReleased => InputElementState::None,
+				_ => *key
+			}
+		}
+		for button in &mut self.buttons {
+			*button = match *button {
+				InputElementState::JustPressed => InputElementState::Held,
+				InputElementState::JustReleased => InputElementState::None,
+				_ => *button
+			}
+		}
 	}
 
 	fn process_event(&mut self, event: &winit::event::Event<()>) -> bool {
@@ -91,15 +106,21 @@ impl Input {
 					self.close_requested = true;
 					true
 				},
+				// WindowEvent::CursorMoved { position, .. } => {
+				// 	let cur_mouse_pos = (position.x as f32, position.y as f32);
+				// 	self.mouse_delta = (cur_mouse_pos.0 - self.last_mouse_pos.0, cur_mouse_pos.1 - self.last_mouse_pos.1);
+				// 	self.last_mouse_pos = cur_mouse_pos;
+				// 	true
+				// },
 				WindowEvent::MouseInput { state, button, .. } => {
 					let index = match button {
-						MouseButton::Left => 0usize,
-						MouseButton::Right => 1usize,
-						MouseButton::Middle => 2usize,
-						MouseButton::Back => 3usize,
-						MouseButton::Forward => 4usize,
-						MouseButton::Other(index) => *index as usize,
-					};
+						MouseButton::Left => 0,
+						MouseButton::Right => 1,
+						MouseButton::Middle => 2,
+						MouseButton::Back => 3,
+						MouseButton::Forward => 4,
+						MouseButton::Other(index) => *index,
+					} as usize;
 
 					self.buttons[index] = InputElementState::from_old_new(self.buttons[index], *state);
 					true
@@ -180,6 +201,7 @@ pub struct LoadContext<'a> {
 }
 
 impl LoadContext<'_> {
+	#[allow(dead_code)]
 	fn window(&self) -> &Window { self.gfx.window() }
 	fn window_mut(&mut self) -> &mut Window { self.gfx.window_mut() }
 }
@@ -233,6 +255,7 @@ async fn run() {
 				}
 			}
 			Event::AboutToWait => {
+				elwt.set_control_flow(winit::event_loop::ControlFlow::Poll);
 				let now = std::time::Instant::now();
 				let dt = now - last_render_time;
 				last_render_time = now;

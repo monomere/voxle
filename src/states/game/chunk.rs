@@ -3,9 +3,7 @@ use num_traits::FromPrimitive;
 
 use crate::gfx;
 
-use super::renderer::BlockVertex;
-
-pub const CHUNK_SIZE: (usize, usize, usize) = (16, 16, 16);
+pub const CHUNK_SIZE: (usize, usize, usize) = (32, 32, 32);
 pub const CHUNK_BLOCK_COUNT: usize = CHUNK_SIZE.0 * CHUNK_SIZE.1 * CHUNK_SIZE.2;
 
 #[derive(Clone, Copy)]
@@ -47,11 +45,11 @@ pub struct ChunkData {
 	pub blocks: [Block; CHUNK_BLOCK_COUNT]
 }
 
-pub struct ChunkDataRef {
+pub struct UnsafeChunkDataRef {
 	_ptr: *const ChunkData
 }
 
-impl ChunkDataRef {
+impl UnsafeChunkDataRef {
 	pub fn new(ptr: *const ChunkData) -> Self {
 		Self { _ptr: ptr }
 	}
@@ -85,15 +83,20 @@ impl FaceDirection {
 		}
 	}
 
-	/// zeroes the axis of the normal, leaves other axes.
-	pub fn zero_axis<T: From<i32>>(&self, (x, y, z): (T, T, T)) -> (T, T, T) {
+	/// clamps the axis of the normal, leaves other axes.
+	pub fn zero_axis<T: From<i32>>(
+		&self,
+		(x, y, z): (T, T, T),
+		(nx, ny, nz): (T, T, T),
+		(px, py, pz): (T, T, T),
+	) -> (T, T, T) {
 		match self {
-			Self::PX => ((0).into(), y, z),
-			Self::NX => ((0).into(), y, z),
-			Self::PY => (x, (0).into(), z),
-			Self::NY => (x, (0).into(), z),
-			Self::PZ => (x, y, (0).into()),
-			Self::NZ => (x, y, (0).into()),
+			Self::PX => (px, y, z),
+			Self::NX => (nx, y, z),
+			Self::PY => (x, py, z),
+			Self::NY => (x, ny, z),
+			Self::PZ => (x, y, pz),
+			Self::NZ => (x, y, nz),
 		}
 	}
 
@@ -151,9 +154,9 @@ impl ChunkData {
 	pub fn generate_mesh(
 		&self,
 		chunk_position: [i32; 3],
-		chunk_neighbors: &[Option<ChunkDataRef>]
-	) -> (Vec<super::renderer::BlockVertex>, Vec<u32>) {
-		let mut vertices = Vec::<super::renderer::BlockVertex>::new();
+		chunk_neighbors: &[Option<UnsafeChunkDataRef>]
+	) -> (Vec<super::renderer::chunk::BlockVertex>, Vec<u32>) {
+		let mut vertices = Vec::<super::renderer::chunk::BlockVertex>::new();
 		let mut indices = Vec::<u32>::new();
 
 		'outer: for y in 0..CHUNK_SIZE.1 as i32 {
@@ -183,7 +186,11 @@ impl ChunkData {
 							}
 						} else { // neighbor block in different chunk:
 							if let Some(neighbor_chunk) = &chunk_neighbors[direction as usize] {
-								let (x, y, z) = direction.zero_axis((x, y, z));
+								let (x, y, z) = direction.zero_axis(
+									(x, y, z),
+									(CHUNK_SIZE.0 as i32 - 1, CHUNK_SIZE.1 as i32 - 1, CHUNK_SIZE.2 as i32 - 1),
+									(0, 0, 0)
+								);
 
 								if let Some(offset) = neighbor_chunk.get().coords_to_offset(x, y, z) {
 									if neighbor_chunk.get().blocks[offset].is_solid() {
@@ -202,7 +209,7 @@ impl ChunkData {
 	
 						for index in face_vertices {
 							let [vx, vy, vz] = CUBE_VERTICES[index];
-							vertices.push(super::renderer::BlockVertex {
+							vertices.push(super::renderer::chunk::BlockVertex {
 								position: [
 									vx + block_position[0],
 									vy + block_position[1],
@@ -227,7 +234,7 @@ impl ChunkData {
 
 pub struct Chunk {
 	pub data: Box<ChunkData>,
-	pub mesh: Option<gfx::Mesh<BlockVertex>>,
+	pub mesh: Option<gfx::Mesh<super::renderer::chunk::BlockVertex>>,
 	pub position: [i32; 3]
 }
 
@@ -240,7 +247,7 @@ impl Chunk {
 		}
 	}
 
-	pub fn update_mesh(&mut self, gfx: &gfx::Gfx, chunk_neighbors: &[Option<ChunkDataRef>]) {
+	pub fn update_mesh(&mut self, gfx: &gfx::Gfx, chunk_neighbors: &[Option<UnsafeChunkDataRef>]) {
 		let (vertices, indices) = self.data.generate_mesh(self.position, chunk_neighbors);
 		if let Some(ref mut mesh) = &mut self.mesh {
 			mesh.update(gfx, &vertices, &indices);
