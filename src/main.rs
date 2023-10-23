@@ -1,6 +1,7 @@
 #![feature(trait_alias)]
+#![feature(const_trait_impl)]
 
-use scene::State;
+use state::State;
 use winit::{
 	event::*,
 	event_loop::EventLoop,
@@ -8,8 +9,11 @@ use winit::{
 };
 
 mod gfx;
-mod scene;
+mod state;
 mod states;
+mod polyfill;
+mod gui;
+mod math;
 
 extern crate nalgebra_glm as glm;
 
@@ -227,8 +231,18 @@ async fn run() {
 
 	event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
 	
+	let event_loop_start = std::time::Instant::now();
 	let mut last_render_time = std::time::Instant::now();
-	event_loop.run(move |event, elwt| if !gfx.window_mut().input.process_event(&event) {
+	event_loop.run(move |event, elwt| {
+		gfx.egui_platform.handle_event(&gfx.window.window, &event);
+		if gfx.egui_platform.captures_event(&event) {
+			return;
+		}
+
+    if gfx.window_mut().input.process_event(&event) {
+			return;
+		}
+
 		if gfx.window().input().close_requested() {
 			elwt.exit();
 		}
@@ -268,6 +282,8 @@ async fn run() {
 					
 					state.update(&mut context);
 				}
+
+				gfx.egui_platform.update_time(event_loop_start.elapsed().as_secs_f64());
 				
 				match gfx.render(&state) {
 					Ok(_) => {}
@@ -275,6 +291,7 @@ async fn run() {
 					Err(wgpu::SurfaceError::OutOfMemory) => elwt.exit(),
 					Err(e) => eprintln!("{:?}", e),
 				}
+
 				gfx.window_mut().input.reset_deltas();
 				gfx.window().window.request_redraw();
 			}

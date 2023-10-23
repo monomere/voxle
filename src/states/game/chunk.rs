@@ -1,10 +1,10 @@
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use crate::gfx;
+use crate::{gfx, math::{Vec3i32, Vec3, Vector}};
 
-pub const CHUNK_SIZE: (usize, usize, usize) = (32, 32, 32);
-pub const CHUNK_BLOCK_COUNT: usize = CHUNK_SIZE.0 * CHUNK_SIZE.1 * CHUNK_SIZE.2;
+pub const CHUNK_SIZE: Vec3<usize> = Vector([32, 32, 32]);
+pub const CHUNK_BLOCK_COUNT: usize = CHUNK_SIZE.0[0] * CHUNK_SIZE.0[1] * CHUNK_SIZE.0[2];
 
 #[derive(Clone, Copy)]
 #[repr(packed)]
@@ -136,10 +136,10 @@ impl ChunkData {
 			None
 		} else {
 			let (x, y, z) = (x as usize, y as usize, z as usize);
-			if x >= CHUNK_SIZE.0 || y >= CHUNK_SIZE.1 || z >= CHUNK_SIZE.2 {
+			if x >= CHUNK_SIZE.x || y >= CHUNK_SIZE.y || z >= CHUNK_SIZE.z {
 				None
 			} else {
-				let offset = y * CHUNK_SIZE.2 * CHUNK_SIZE.0 + CHUNK_SIZE.0 * z + x;
+				let offset = y * CHUNK_SIZE.z * CHUNK_SIZE.x + CHUNK_SIZE.x * z + x;
 				if offset >= self.blocks.len() { None } else { Some(offset) }
 			}
 		}
@@ -153,26 +153,25 @@ impl ChunkData {
 
 	pub fn generate_mesh(
 		&self,
-		chunk_position: [i32; 3],
+		chunk_position: Vec3i32,
 		chunk_neighbors: &[Option<UnsafeChunkDataRef>]
 	) -> (Vec<super::renderer::chunk::BlockVertex>, Vec<u32>) {
 		let mut vertices = Vec::<super::renderer::chunk::BlockVertex>::new();
 		let mut indices = Vec::<u32>::new();
 
-		'outer: for y in 0..CHUNK_SIZE.1 as i32 {
-			for z in 0..CHUNK_SIZE.2 as i32 {
-				for x in 0..CHUNK_SIZE.0 as i32 {
+		'outer: for y in 0..CHUNK_SIZE.y as i32 {
+			for z in 0..CHUNK_SIZE.z as i32 {
+				for x in 0..CHUNK_SIZE.x as i32 {
 					let offset = self.coords_to_offset(x, y, z);
 					if let None = offset { break 'outer }
 					let offset = offset.unwrap();
 
 					let block = self.blocks[offset];
 
-					let block_position = [
-						x as f32 + chunk_position[0] as f32 * CHUNK_SIZE.0 as f32,
-						y as f32 + chunk_position[1] as f32 * CHUNK_SIZE.1 as f32,
-						z as f32 + chunk_position[2] as f32 * CHUNK_SIZE.2 as f32,
-					];
+					let block_position =
+						chunk_position.map(|c| c as f32) *
+						CHUNK_SIZE.map(|c| c as f32) +
+						Vector([x, y, z]).map(|c| c as f32);
 
 					if block.id == 0 {
 						continue; // don't render air.
@@ -188,7 +187,7 @@ impl ChunkData {
 							if let Some(neighbor_chunk) = &chunk_neighbors[direction as usize] {
 								let (x, y, z) = direction.zero_axis(
 									(x, y, z),
-									(CHUNK_SIZE.0 as i32 - 1, CHUNK_SIZE.1 as i32 - 1, CHUNK_SIZE.2 as i32 - 1),
+									(CHUNK_SIZE.x as i32 - 1, CHUNK_SIZE.y as i32 - 1, CHUNK_SIZE.z as i32 - 1),
 									(0, 0, 0)
 								);
 
@@ -211,9 +210,9 @@ impl ChunkData {
 							let [vx, vy, vz] = CUBE_VERTICES[index];
 							vertices.push(super::renderer::chunk::BlockVertex {
 								position: [
-									vx + block_position[0],
-									vy + block_position[1],
-									vz + block_position[2],
+									vx + block_position.x,
+									vy + block_position.y,
+									vz + block_position.z,
 								],
 								_pad: 0,
 								data: block.id as u32 | (direction as u32) << 16,
@@ -235,11 +234,11 @@ impl ChunkData {
 pub struct Chunk {
 	pub data: Box<ChunkData>,
 	pub mesh: Option<gfx::Mesh<super::renderer::chunk::BlockVertex>>,
-	pub position: [i32; 3]
+	pub position: Vec3i32
 }
 
 impl Chunk {
-	pub fn new(position: [i32; 3], data: ChunkData) -> Self {
+	pub fn new(position: Vec3i32, data: ChunkData) -> Self {
 		Self {
 			data: Box::new(data),
 			position,

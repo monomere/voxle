@@ -2,14 +2,9 @@ use std::marker::PhantomData;
 
 use wgpu::util::DeviceExt;
 
-use crate::{scene::State, Window};
+use crate::{state::State, Window, polyfill};
 
 use self::graph::GraphRenderContext;
-
-
-pub trait Renderer<P> {
-	fn on_use<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, param: P);
-}
 
 pub struct Gfx {
 	pub surface: wgpu::Surface,
@@ -17,8 +12,8 @@ pub struct Gfx {
 	pub queue: wgpu::Queue,
 	pub config: wgpu::SurfaceConfiguration,
 	pub size: winit::dpi::PhysicalSize<u32>,
-	// pub egui_platform: egui_winit_platform::Platform,
-	// pub egui_renderpass: egui_wgpu_backend::RenderPass,
+	pub egui_renderpass: egui_wgpu_backend::RenderPass,
+	pub egui_platform: polyfill::winit_egui::Platform,
 
 	// pub text_brush: wgpu_text::TextBrush,
 
@@ -85,23 +80,23 @@ impl Gfx {
 		
 		surface.configure(&device, &config);
 
-		// let egui_platform = egui_winit_platform::Platform::new(egui_winit_platform::PlatformDescriptor {
-		// 	physical_width: window.window.inner_size().width,
-		// 	physical_height: window.window.inner_size().height,
-		// 	scale_factor: window.window.scale_factor(),
-		// 	font_definitions: Default::default(),
-		// 	style: Default::default()
-		// });
+		let egui_platform = polyfill::winit_egui::Platform::new(polyfill::winit_egui::PlatformDescriptor {
+			physical_width: window.window.inner_size().width,
+			physical_height: window.window.inner_size().height,
+			scale_factor: window.window.scale_factor(),
+			font_definitions: Default::default(),
+			style: Default::default()
+		});
 
-		// let egui_renderpass = egui_wgpu_backend::RenderPass::new(&device, config.format, 1);
+		let egui_renderpass = egui_wgpu_backend::RenderPass::new(&device, config.format, 1);
 
-		// let font: &[u8] = include_bytes!("Hack-Regular.ttf");
-		// let text_brush = wgpu_text::BrushBuilder::using_font_bytes(font).unwrap().build(
+		// let font = wgpu_text::glyph_brush::ab_glyph::FontArc::try_from_slice(include_bytes!("Hack-Regular.ttf")).unwrap();
+		// let text_brush = wgpu_text::BrushBuilder::using_font(font).build(
 		// 	&device,
 		// 	config.width,
 		// 	config.height,
 		// 	config.format
-		// ).;
+		// );
 
 		Self {
 			window,
@@ -111,8 +106,8 @@ impl Gfx {
 			config,
 			size,
 			// text_brush,
-			// egui_platform,
-			// egui_renderpass
+			egui_platform,
+			egui_renderpass
 		}
 	}
 	
@@ -150,21 +145,31 @@ impl Gfx {
 			state.render(&mut context);
 		}
 
-		// {
-		// 	self.egui_platform.begin_frame();
-		// 	state.ui(&self.egui_platform.context());
-		// 	let full_output = self.egui_platform.end_frame(Some(&self.window.window));
-		// 	let paint_jobs = self.egui_platform.context().tessellate(full_output.shapes);
+		self.egui_platform.begin_frame();
+		self.egui_platform.context().output_mut(|o| {
+			if self.window.capture_cursor {
+				o.cursor_icon = egui::CursorIcon::None;
+			}
+		});
 
-		// 	let screen_descriptor = egui_wgpu_backend::ScreenDescriptor {
-		// 		physical_width: self.config.width,
-		// 		physical_height: self.config.height,
-		// 		scale_factor: self.window.window.scale_factor() as f32,
-		// 	};
-		// }
+		state.ui(&self.egui_platform.context());
+		let full_output = self.egui_platform.end_frame(Some(&self.window.window));
+		let paint_jobs = self.egui_platform.context().tessellate(full_output.shapes);
+
+		let screen_descriptor = egui_wgpu_backend::ScreenDescriptor {
+			physical_width: self.config.width,
+			physical_height: self.config.height,
+			scale_factor: self.window.window.scale_factor() as f32,
+		};
+
+		self.egui_renderpass.add_textures(&self.device, &self.queue, &full_output.textures_delta).unwrap();
+		self.egui_renderpass.update_buffers(&self.device, &self.queue, &paint_jobs, &screen_descriptor);
+		self.egui_renderpass.execute(&mut encoder, &view, &paint_jobs, &screen_descriptor, None).unwrap();
 		
 		self.queue.submit(std::iter::once(encoder.finish()));
 		output.present();
+
+		self.egui_renderpass.remove_textures(full_output.textures_delta).unwrap();
 
 		Ok(())
 	}
@@ -254,6 +259,16 @@ impl Texture {
 		});
 
 		Self { texture, view, sampler: Some(sampler) }
+	}
+}
+
+pub struct UiContext {
+	sections: Vec<wgpu_text::glyph_brush::OwnedSection>
+}
+
+impl UiContext {
+	pub fn section(&mut self, s: wgpu_text::glyph_brush::Section) {
+		self.sections.push(s.to_owned());
 	}
 }
 

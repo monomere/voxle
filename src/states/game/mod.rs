@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use noise::NoiseFn;
 use winit::keyboard::KeyCode;
-use crate::{scene::State, gfx, UpdateContext};
+use crate::{state::State, gfx, UpdateContext, math::{Vec3i32, Vector}};
 
 use self::renderer::GameRenderContext;
 
@@ -21,13 +21,13 @@ impl WorldGen {
 		}
 	}
 
-	fn generate_chunk(&self, position: [i32; 3]) -> Option<chunk::Chunk> {
+	fn generate_chunk(&self, position: Vec3i32) -> Option<chunk::Chunk> {
 		let mut chunk = chunk::Chunk::new(position, chunk::ChunkData::new());
 
-		if position == [0, 0, 0] {
-			for y in 0..chunk::CHUNK_SIZE.1 as i32 {
-				for z in 0..chunk::CHUNK_SIZE.2 as i32 {
-					for x in 0..chunk::CHUNK_SIZE.0 as i32 {
+		if position == Vector([0, 0, 0]) {
+			for y in 0..chunk::CHUNK_SIZE.y as i32 {
+				for z in 0..chunk::CHUNK_SIZE.z as i32 {
+					for x in 0..chunk::CHUNK_SIZE.x as i32 {
 						chunk.data.set_block(x, y, z, chunk::Block {
 							id: 1,
 							state: 0
@@ -38,19 +38,19 @@ impl WorldGen {
 			return Some(chunk);
 		}
 
-		for z in 0..chunk::CHUNK_SIZE.2 as i32 {
-			for x in 0..chunk::CHUNK_SIZE.0 as i32 {
+		for z in 0..chunk::CHUNK_SIZE.z as i32 {
+			for x in 0..chunk::CHUNK_SIZE.x as i32 {
 
 				let raw_y = (self.noise.get([
-					(position[0] * chunk::CHUNK_SIZE.0 as i32 + x) as f64 * 0.01,
-					(position[2] * chunk::CHUNK_SIZE.2 as i32 + z) as f64 * 0.01
-				]) * chunk::CHUNK_SIZE.1 as f64) as i32;
+					(position.x * chunk::CHUNK_SIZE.x as i32 + x) as f64 * 0.01,
+					(position.z * chunk::CHUNK_SIZE.z as i32 + z) as f64 * 0.01
+				]) * chunk::CHUNK_SIZE.y as f64) as i32;
 
 				// check if we're in our chunk.
-				if raw_y / chunk::CHUNK_SIZE.1 as i32 == position[1] {
+				if raw_y / chunk::CHUNK_SIZE.y as i32 == position.y {
 
 					// chunk-local position.
-					let top_y = raw_y - chunk::CHUNK_SIZE.1 as i32 * position[1];
+					let top_y = raw_y - chunk::CHUNK_SIZE.y as i32 * position.y;
 
 					for y in 0..=top_y {
 						chunk.data.set_block(x, y, z, chunk::Block {
@@ -112,7 +112,7 @@ impl GameState {
 					if x*x + y*y + z*z < squared_rd {
 						saved_chunks.insert((cx, cy, cz));
 						if !self.chunks.contains_key(&(cx, cy, cz)) {
-							if let Some(chunk) = self.worldgen.generate_chunk([cx, cy, cz]) {
+							if let Some(chunk) = self.worldgen.generate_chunk(Vector([cx, cy, cz])) {
 								self.chunks.insert((cx, cy, cz), chunk);
 								to_be_updated.insert((cx, cy, cz));
 
@@ -174,9 +174,9 @@ impl State for GameState {
 		self.current_chunk_position = {
 			let p = self.renderer.camera.position;
 			(
-				p.x as i32 / chunk::CHUNK_SIZE.0 as i32,
-				p.y as i32 / chunk::CHUNK_SIZE.1 as i32,
-				p.z as i32 / chunk::CHUNK_SIZE.2 as i32,
+				p.x as i32 / chunk::CHUNK_SIZE.x as i32,
+				p.y as i32 / chunk::CHUNK_SIZE.y as i32,
+				p.z as i32 / chunk::CHUNK_SIZE.z as i32,
 			)
 		};
 
@@ -191,6 +191,12 @@ impl State for GameState {
 	
 	fn render<'a>(&'a self, context: &mut gfx::RenderContext<'a>) {
 		self.renderer.render(context, self);
+	}
+
+	fn ui<'a>(&'a self, ctx: &egui::Context) {
+		egui::Window::new("debug").show(ctx, |ui| {
+			ui.label(format!("chunk: {:?}", self.current_chunk_position));
+		});
 	}
 }
 

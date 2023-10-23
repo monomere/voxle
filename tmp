@@ -1,0 +1,9 @@
+
+    // Because we don't have access to the window in handle_event, we can't
+    // get the updated inner_size to update raw_input.screen_rect.
+    // That means that we have to postpone it until start_frame.
+    // This is a winit quirk, the field containing the updated size exists,
+    // but is private (since you can just do window.inner_size())
+    // See: https://github.com/rust-windowing/winit/issues/3080
+    scale_factor_changed: bool,
+		

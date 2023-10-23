@@ -4,6 +4,7 @@ pub trait State {
 	fn load(&mut self, _context: &mut LoadContext) {}
 	fn update(&mut self, _context: &mut UpdateContext) {}
 	fn render<'a>(&'a self, _context: &mut gfx::RenderContext<'a>) { }
+	// fn ui(&self, _context: &mut gfx::UiContext) { }
 	fn ui(&self, _context: &egui::Context) { }
 }
 
