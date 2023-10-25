@@ -1,7 +1,7 @@
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use crate::{gfx, math::{Vec3i32, Vec3, Vector}};
+use crate::{gfx, math::*};
 
 pub const CHUNK_SIZE: Vec3<usize> = Vector([32, 32, 32]);
 pub const CHUNK_BLOCK_COUNT: usize = CHUNK_SIZE.0[0] * CHUNK_SIZE.0[1] * CHUNK_SIZE.0[2];
@@ -72,31 +72,31 @@ impl FaceDirection {
 		&[Self::PX, Self::NX, Self::PY, Self::NY, Self::PZ, Self::NZ]
 	}
 
-	pub fn normal<T: From<i32>>(&self) -> (T, T, T) {
+	pub fn normal<T: Scalar + From<i32>>(&self) -> Vec3<T> {
 		match self {
-			Self::PX => (( 1).into(), ( 0).into(), ( 0).into()),
-			Self::NX => ((-1).into(), ( 0).into(), ( 0).into()),
-			Self::PY => (( 0).into(), ( 1).into(), ( 0).into()),
-			Self::NY => (( 0).into(), (-1).into(), ( 0).into()),
-			Self::PZ => (( 0).into(), ( 0).into(), ( 1).into()),
-			Self::NZ => (( 0).into(), ( 0).into(), (-1).into()),
+			Self::PX => vec3(( 1).into(), ( 0).into(), ( 0).into()),
+			Self::NX => vec3((-1).into(), ( 0).into(), ( 0).into()),
+			Self::PY => vec3(( 0).into(), ( 1).into(), ( 0).into()),
+			Self::NY => vec3(( 0).into(), (-1).into(), ( 0).into()),
+			Self::PZ => vec3(( 0).into(), ( 0).into(), ( 1).into()),
+			Self::NZ => vec3(( 0).into(), ( 0).into(), (-1).into()),
 		}
 	}
 
 	/// clamps the axis of the normal, leaves other axes.
-	pub fn zero_axis<T: From<i32>>(
+	pub fn zero_axis<T: Scalar + From<i32>>(
 		&self,
-		(x, y, z): (T, T, T),
-		(nx, ny, nz): (T, T, T),
-		(px, py, pz): (T, T, T),
-	) -> (T, T, T) {
+		Vector([x, y, z]): Vec3<T>,
+		Vector([nx, ny, nz]): Vec3<T>,
+		Vector([px, py, pz]): Vec3<T>,
+	) -> Vec3<T> {
 		match self {
-			Self::PX => (px, y, z),
-			Self::NX => (nx, y, z),
-			Self::PY => (x, py, z),
-			Self::NY => (x, ny, z),
-			Self::PZ => (x, y, pz),
-			Self::NZ => (x, y, nz),
+			Self::PX => vec3(px, y, z),
+			Self::NX => vec3(nx, y, z),
+			Self::PY => vec3(x, py, z),
+			Self::NY => vec3(x, ny, z),
+			Self::PZ => vec3(x, y, pz),
+			Self::NZ => vec3(x, y, nz),
 		}
 	}
 
@@ -131,7 +131,7 @@ impl ChunkData {
 		}
 	}
 
-	fn coords_to_offset(&self, x: i32, y: i32, z: i32) -> Option<usize> {
+	fn coords_to_offset(&self, Vector([x, y, z]): Vec3<i32>) -> Option<usize> {
 		if x < 0 || y < 0 || z < 0 {
 			None
 		} else {
@@ -145,8 +145,16 @@ impl ChunkData {
 		}
 	}
 
-	pub fn set_block(&mut self, x: i32, y: i32, z: i32, block: Block) {
-		if let Some(offset) = self.coords_to_offset(x, y, z) {
+	pub fn get_block(&self, position: Vec3<i32>) -> Option<&Block> {
+		if let Some(offset) = self.coords_to_offset(position) {
+			Some(&self.blocks[offset])
+		} else {
+			None
+		}
+	}
+
+	pub fn set_block(&mut self, position: Vec3<i32>, block: Block) {
+		if let Some(offset) = self.coords_to_offset(position) {
 			self.blocks[offset] = block;
 		}
 	}
@@ -162,7 +170,8 @@ impl ChunkData {
 		'outer: for y in 0..CHUNK_SIZE.y as i32 {
 			for z in 0..CHUNK_SIZE.z as i32 {
 				for x in 0..CHUNK_SIZE.x as i32 {
-					let offset = self.coords_to_offset(x, y, z);
+					let pos = vec3(x, y, z);
+					let offset = self.coords_to_offset(pos);
 					if let None = offset { break 'outer }
 					let offset = offset.unwrap();
 
@@ -178,20 +187,20 @@ impl ChunkData {
 					}
 
 					for (direction, face_vertices) in CUBE_FACES {
-						let (nx, ny, nz) = direction.normal::<i32>();
-						if let Some(offset) = self.coords_to_offset(nx + x, ny + y, nz + z) {
+						let normal = direction.normal::<i32>();
+						if let Some(offset) = self.coords_to_offset(normal + pos) {
 							if self.blocks[offset].is_solid() {
 								continue; // don't render faces facing solid blocks.
 							}
 						} else { // neighbor block in different chunk:
 							if let Some(neighbor_chunk) = &chunk_neighbors[direction as usize] {
-								let (x, y, z) = direction.zero_axis(
-									(x, y, z),
-									(CHUNK_SIZE.x as i32 - 1, CHUNK_SIZE.y as i32 - 1, CHUNK_SIZE.z as i32 - 1),
-									(0, 0, 0)
+								let pos = direction.zero_axis(
+									pos,
+									CHUNK_SIZE.each_as() - 1,
+									Vector::zero()
 								);
 
-								if let Some(offset) = neighbor_chunk.get().coords_to_offset(x, y, z) {
+								if let Some(offset) = neighbor_chunk.get().coords_to_offset(pos) {
 									if neighbor_chunk.get().blocks[offset].is_solid() {
 										// BUG: this always happens?? wrong offset (?)
 										continue; // don't render faces facing solid blocks (in other chunks).

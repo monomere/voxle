@@ -1,12 +1,12 @@
 use wgpu::util::DeviceExt;
-use crate::gfx::{self, graph};
+use crate::{gfx::{self, graph}, math::{self, Vector, vec3}};
 
 use self::chunk::ChunkRenderContext;
 
 pub mod chunk;
 
 pub struct Camera {
-	pub position: glm::Vec3,
+	pub position: math::Vec3f32,
 	pub yaw: f32,
 	pub pitch: f32,
 	pub aspect: f32,
@@ -17,15 +17,15 @@ pub struct Camera {
 
 impl Camera {
 	fn build_view_proj_matrix(&self) -> glm::Mat4 {
-		let direction = glm::vec3(
+		let direction = vec3(
 			self.yaw.cos() * self.pitch.cos(),
 			self.pitch.sin(),
 			self.yaw.sin() * self.pitch.cos(),
 		);
 
 		let view = glm::look_at_rh(
-			&self.position,
-			&(self.position + &direction),
+			&glm::vec3(self.position.x, self.position.y, self.position.z),
+			&glm::TVec::from_column_slice(&(self.position + direction).0),
 			&glm::vec3(0.0, 1.0, 0.0)
 		);
 		
@@ -74,7 +74,7 @@ impl GameRenderer {
 		});
 		
 		let camera = Camera {
-			position: glm::vec3(0.0, 0.5, -2.0),
+			position: Vector([0.0, 0.5, -2.0]),
 			yaw: 3.0 * glm::quarter_pi::<f32>(),
 			pitch: 0.0,
 			aspect: gfx.config.width as f32 / gfx.config.height as f32,
