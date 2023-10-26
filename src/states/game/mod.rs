@@ -3,7 +3,7 @@ use noise::NoiseFn;
 use winit::keyboard::KeyCode;
 use crate::{state::State, gfx, UpdateContext, math::*};
 
-use self::renderer::GameRenderContext;
+use self::{renderer::GameRenderContext, chunk::Block};
 
 mod chunk;
 mod renderer;
@@ -35,15 +35,35 @@ impl WorldGen {
 		}
 	}
 
+	fn grass_dirt_stone(y: i32, top_y: i32) -> u16 {
+		if y == top_y {
+			chunk::BlockId::GRASS as u16
+		} else if top_y - y < 5 {
+			chunk::BlockId::DIRT as u16
+		} else {
+			chunk::BlockId::STONE as u16
+		}
+	}
+
 	fn generate_chunk(&self, chunk_pos: Vec3i32) -> Option<chunk::Chunk> {
 		let mut chunk = chunk::Chunk::new(chunk_pos, chunk::ChunkData::new());
 		let chunk_pos_block = chunk_pos * chunk::CHUNK_SIZE.each_as::<i32>();
 
 		if chunk_pos.y < -1 && chunk_pos.y > -4 {
-			Self::fill_chunk(&mut chunk, chunk::Block {
-				id: 1,
-				state: 0
-			});
+			for y in 0..chunk::CHUNK_SIZE.y as i32 {
+				for z in 0..chunk::CHUNK_SIZE.z as i32 {
+					for x in 0..chunk::CHUNK_SIZE.x as i32 {
+						chunk.data.set_block(vec3(x, y, z), chunk::Block {
+							id: if chunk_pos.y == -2 {
+								Self::grass_dirt_stone(y, chunk::CHUNK_SIZE.y as i32)
+							} else {
+								chunk::BlockId::STONE as u16
+							},
+							state: 0
+						});
+					}
+				}
+			}
 			return Some(chunk);
 		}
 
@@ -55,19 +75,18 @@ impl WorldGen {
 
 				// check if we're in our chunk.
 				if chunk_y >= chunk_pos.y {
-					let loc_y = if chunk_y > chunk_pos.y {
-						chunk::CHUNK_SIZE.y as i32 - 1
+					let (loc_y, top_y) = if chunk_y > chunk_pos.y {
+						(chunk::CHUNK_SIZE.y as i32 - 1, -1)
 					} else {
-						loc_y.abs()
+						(loc_y.abs(), loc_y.abs())
 					};
 
 					for y in 0..=loc_y {
 						chunk.data.set_block(vec3(x, y, z), chunk::Block {
-							id: (rand::random::<f32>() * 100.0) as u16 + 1,
+							id: Self::grass_dirt_stone(y, top_y),
 							state: 0
 						});
 					}
-
 				}
 			}	
 		}
@@ -186,6 +205,18 @@ impl State for GameState {
 
 		if context.input().key(KeyCode::KeyG).just_pressed() {
 			self.render_wireframe = !self.render_wireframe;
+		}
+
+		for (id, keycode) in [KeyCode::Digit0, KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3].into_iter().enumerate() {
+			if context.input().key(keycode).just_pressed() {
+				let loc_block_pos = self.renderer.camera.position.each_as::<i32>()
+					.zip_map(chunk::CHUNK_SIZE.each_as::<i32>(), |a, b| num::integer::mod_floor(a, b));
+
+				self.chunks.get_mut(&self.current_chunk_position).unwrap().data.set_block(loc_block_pos, Block {
+					id: id as u16,
+					state: 0
+				});
+			}
 		}
 	}
 	

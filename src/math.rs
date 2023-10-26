@@ -189,15 +189,26 @@ macro_rules! impl_swizzles_2d_for_vec {
 		impl_swizzle_for_vec!($n -> 2: yx => y, x);
 	};
 	(3, $n:literal) => {
-		impl_swizzles_2d_for_vec!(2, 3);
+		impl_swizzles_2d_for_vec!(2, $n);
 		impl_swizzle_for_vec!($n -> 2: xz => x, z);
 		impl_swizzle_for_vec!($n -> 2: yz => y, z);
 		impl_swizzle_for_vec!($n -> 2: zx => z, x);
 		impl_swizzle_for_vec!($n -> 2: zy => z, y);
 	};
+	(4, $n:literal) => {
+		impl_swizzles_2d_for_vec!(3, $n);
+		impl_swizzle_for_vec!($n -> 2: xw => x, w);
+		impl_swizzle_for_vec!($n -> 2: yw => y, w);
+		impl_swizzle_for_vec!($n -> 2: zw => z, w);
+		impl_swizzle_for_vec!($n -> 2: wx => w, x);
+		impl_swizzle_for_vec!($n -> 2: wy => w, y);
+		impl_swizzle_for_vec!($n -> 2: wz => w, z);
+	};
 }
 
+impl_swizzles_2d_for_vec!(2, 2);
 impl_swizzles_2d_for_vec!(3, 3);
+impl_swizzles_2d_for_vec!(4, 4);
 
 impl<T: Scalar, const N: usize> From<T> for Vector<T, N> {
 	fn from(value: T) -> Self {
@@ -281,6 +292,11 @@ pub type Vec1i32 = Vec1<i32>;
 pub type Vec2i32 = Vec2<i32>;
 pub type Vec3i32 = Vec3<i32>;
 pub type Vec4i32 = Vec4<i32>;
+
+pub type Vec1u32 = Vec1<u32>;
+pub type Vec2u32 = Vec2<u32>;
+pub type Vec3u32 = Vec3<u32>;
+pub type Vec4u32 = Vec4<u32>;
 
 pub type Vec1f32 = Vec1<f32>;
 pub type Vec2f32 = Vec2<f32>;

@@ -4,8 +4,8 @@ use crate::gfx;
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct BlockVertex {
 	pub position: [f32; 3],
-	pub _pad: u32,
 	pub data: u32,
+	pub texcoord: [f32; 2],
 }
 
 #[repr(C)]
@@ -40,8 +40,14 @@ fn create_pipeline(
 					// data
 					wgpu::VertexAttribute {
 						format: wgpu::VertexFormat::Uint32,
-						offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+						offset: 3 * 4,
 						shader_location: 1
+					},
+					// texcoord
+					wgpu::VertexAttribute {
+						format: wgpu::VertexFormat::Float32x2,
+						offset: 4 * 4,
+						shader_location: 2
 					}
 				],
 			}]

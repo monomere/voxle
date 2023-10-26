@@ -14,11 +14,60 @@ pub struct Block {
 }
 
 #[derive(FromPrimitive)]
-enum BlockId {
+pub enum BlockId {
 	AIR = 0,
 	STONE = 1,
 	GRASS = 2,
 	DIRT = 3,
+}
+
+#[derive(Clone, Copy)]
+struct BlockTex(u32);
+
+impl BlockTex {
+	const SIZE: u32 = 16;
+
+	fn rect(self) -> Vec4u32 {
+		let p = self.0 * Self::SIZE;
+		vec4(
+			p, 0,
+			p + 16, 16
+		)
+	}
+
+	fn uvs(self) -> Vec4f32 {
+		self.rect().each_as() / Self::SIZE as f32
+	}
+}
+
+struct BlockTextures {
+	top: BlockTex,
+	bottom: BlockTex,
+	left: BlockTex,
+	right: BlockTex,
+	front: BlockTex,
+	back: BlockTex,
+}
+
+impl BlockTextures {
+	fn same(t: BlockTex) -> Self {
+		Self { top: t, bottom: t, left: t, right: t, front: t, back: t }
+	}
+
+	fn cylinder(top: BlockTex, bottom: BlockTex, side: BlockTex) -> Self {
+		Self { top, bottom, left: side, right: side, front: side, back: side }
+	}
+
+	fn in_direction(&self, dir: FaceDirection) -> BlockTex {
+		match dir {
+			FaceDirection::PX => self.right,
+			FaceDirection::NX => self.left,
+			FaceDirection::PY => self.top,
+			FaceDirection::NY => self.bottom,
+			FaceDirection::PZ => self.front,
+			FaceDirection::NZ => self.back,
+		}
+	}
 }
 
 impl BlockId {
@@ -28,6 +77,15 @@ impl BlockId {
 			BlockId::STONE => true,
 			BlockId::GRASS => true,
 			BlockId::DIRT => true,
+		}
+	}
+
+	fn textures(self) -> Option<BlockTextures> {
+		match self {
+    	BlockId::AIR => None,
+			BlockId::STONE => Some(BlockTextures::same(BlockTex(4))),
+			BlockId::GRASS => Some(BlockTextures::cylinder(BlockTex(1), BlockTex(2), BlockTex(0))),
+			BlockId::DIRT => Some(BlockTextures::same(BlockTex(2))),
 		}
 	}
 }
@@ -213,21 +271,33 @@ impl ChunkData {
 						}
 
 						let start_index = vertices.len() as u32;
+
+						let face_uvs = [
+							vec2(0.0, 0.0),
+							vec2(1.0, 0.0),
+							vec2(1.0, 1.0),
+							vec2(0.0, 1.0),
+						];
+
+						let make_uvs = |i: usize, uvs: Vec4f32| {
+							face_uvs[i] * uvs.xy() + (vec2(1.0, 1.0) - face_uvs[i]) * uvs.zw()
+						};
 	
-						for index in face_vertices {
-							let [vx, vy, vz] = CUBE_VERTICES[index];
+						for (index_index, index) in face_vertices.into_iter().enumerate() {
+							let vertex = Vector(CUBE_VERTICES[index]);
 							vertices.push(super::renderer::chunk::BlockVertex {
-								position: [
-									vx + block_position.x,
-									vy + block_position.y,
-									vz + block_position.z,
-								],
-								_pad: 0,
+								position: (vertex + block_position).0,
+								texcoord: make_uvs(
+									index_index,
+									BlockId::from_u16(block.id)
+										.and_then(|id| id.textures().map(|tex| tex.in_direction(direction).uvs()))
+										.unwrap_or(vec4(0.0, 0.0, 0.0, 0.0))
+								).0,
 								data: block.id as u32 | (direction as u32) << 16,
 							});
 						}
 
-						for index in [0, 1, 2,  2, 3, 0] {
+						for index in [0, 1, 2, 2, 3, 0] {
 							indices.push(start_index + index);
 						}
 					}

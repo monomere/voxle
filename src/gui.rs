@@ -154,6 +154,26 @@ impl Window {
 	
 }
 
+pub struct PanelContext<'builder, 'context> {
+	builder: &'builder mut WindowBuilder<'context>,
+	x: i32, y: i32,
+	last: WidgetId
+}
+
+impl<'builder, 'context> PanelContext<'builder, 'context> {
+	pub fn label(&mut self, text: &str) {
+		let width = self.builder.context.font.scaled_text_width(text) + self.builder.context.style.label_margin.horizontal();
+		let height = self.builder.context.font.scaled_height() + self.builder.context.style.label_margin.vertical();
+
+		self.builder.context.builder.text(
+			ScreenRect { x: self.x, y: self.y, width, height },
+			&self.builder.context.font,
+			text,
+			[255, 255, 255, 255]
+		);
+	}
+}
+
 pub struct WindowBuilder<'context> {
 	id: WidgetId,
 	context: &'context mut Context
@@ -196,7 +216,8 @@ impl RectSides {
 }
 
 pub struct Style {
-	window_title_margin: RectSides
+	window_title_margin: RectSides,
+	label_margin: RectSides,
 }
 
 pub struct Context {
@@ -230,9 +251,5 @@ impl Context {
 			id,
 			context: self
 		}
-	}
-
-	pub fn label(&mut self, text: &str) {
-
 	}
 }

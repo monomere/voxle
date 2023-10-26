@@ -8,12 +8,15 @@ var<uniform> camera: CameraUniform;
 struct VertexInput {
 	@location(0) position: vec3<f32>,
 	@location(1) data: u32,
+	@location(2) texcoord: vec2<f32>,
+	@builtin(vertex_index) vertex_index: u32,
 }
 
 struct VertexOutput {
 	@builtin(position) clip_position: vec4<f32>,
 	@location(1) normal: vec3<f32>,
 	@location(2) color: vec3<f32>,
+	@location(3) texcoord: vec2<f32>,
 }
 
 fn rand1(xx: f32) -> f32 {
@@ -43,10 +46,19 @@ fn vs_main(
 		vec3<f32>( 0.0,  0.0,  1.0),
 		vec3<f32>( 0.0,  0.0, -1.0),
 	);
-	
+
+	var block_id = in.data & 0xFFu;
+
+	// var face_vertex_index = in.vertex_index % 6u;
 
 	out.normal = faces[in.data >> 16u];
-	out.color = rand_color(f32(in.data & 0xFFu) * 123.321);
+	out.texcoord = in.texcoord;
+
+	// if block_id < 4u {
+	// 	out.color = colors[block_id];
+	// } else {
+	// 	out.color = rand_color(f32(block_id) * 123.321);
+	// }
 
 	out.clip_position = camera.view_proj * vec4<f32>(in.position, 1.0);
 	return out;
@@ -61,8 +73,8 @@ var<push_constant> pushed: PushConstants;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-	var sun_dir = normalize(vec3<f32>(2.0, 4.0, 1.0));
-	var shadow = clamp(dot(sun_dir, in.normal), 0.1, 1.0);
+	// var sun_dir = normalize(vec3<f32>(2.0, 4.0, 1.0));
+	// var shadow = clamp(dot(sun_dir, in.normal), 0.1, 1.0);
 	
-	return pushed.color * vec4<f32>(in.color, 1.0) * shadow;
+	return pushed.color * vec4<f32>(in.texcoord, 1.0, 1.0);// * shadow;
 }
