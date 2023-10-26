@@ -54,8 +54,13 @@ impl WorldGen {
 				let (chunk_y, loc_y) = num::integer::div_mod_floor(abs_y, chunk::CHUNK_SIZE.y as i32);
 
 				// check if we're in our chunk.
-				if chunk_y == chunk_pos.y {
-					let loc_y = loc_y.abs();
+				if chunk_y >= chunk_pos.y {
+					let loc_y = if chunk_y > chunk_pos.y {
+						chunk::CHUNK_SIZE.y as i32 - 1
+					} else {
+						loc_y.abs()
+					};
+
 					for y in 0..=loc_y {
 						chunk.data.set_block(vec3(x, y, z), chunk::Block {
 							id: (rand::random::<f32>() * 100.0) as u16 + 1,

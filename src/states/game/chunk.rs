@@ -202,7 +202,6 @@ impl ChunkData {
 
 								if let Some(offset) = neighbor_chunk.get().coords_to_offset(pos) {
 									if neighbor_chunk.get().blocks[offset].is_solid() {
-										// BUG: this always happens?? wrong offset (?)
 										continue; // don't render faces facing solid blocks (in other chunks).
 									}
 								} else {

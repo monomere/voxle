@@ -28,3 +28,7 @@ egui_winit_platform = "0.20.0"
 egui_wgpu_backend = "0.26.0"
 wgpu_text = "0.8.4"
 num = "0.4.1"
+
+[profile.dev]
+opt-level = 1
+overflow-checks = false
