@@ -26,6 +26,7 @@ struct BlockTex(u32);
 
 impl BlockTex {
 	const SIZE: u32 = 16;
+	const TEXTURE_SIZE: Vec2u32 = vec2(64, 32);
 
 	fn rect(self) -> Vec4u32 {
 		let p = self.0 * Self::SIZE;
@@ -36,7 +37,12 @@ impl BlockTex {
 	}
 
 	fn uvs(self) -> Vec4f32 {
-		self.rect().each_as() / Self::SIZE as f32
+		self.rect().each_as::<f32>() / vec4(
+			Self::TEXTURE_SIZE.x as f32,
+			Self::TEXTURE_SIZE.y as f32,
+			Self::TEXTURE_SIZE.x as f32,
+			Self::TEXTURE_SIZE.y as f32,
+		)
 	}
 }
 

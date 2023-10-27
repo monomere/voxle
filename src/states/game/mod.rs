@@ -122,6 +122,18 @@ impl GameState {
 		}
 	}
 
+	fn update_chunk(&mut self, gfx: &gfx::Gfx, pos: Vec3i32) {
+		let neighbors = chunk::FaceDirection::all().clone().map(|dir| {
+			let normal = dir.normal::<i32>();
+			self.chunks.get(&(pos + normal)).and_then(|c| Some(chunk::UnsafeChunkDataRef::new(&*c.data)))
+		});
+
+		self.chunks.get_mut(&pos).unwrap().update_mesh(
+			gfx,
+			&neighbors
+		);
+	}
+
 	fn generate_chunks(&mut self, gfx: &gfx::Gfx) {
 		let mut to_be_updated = HashSet::new();
 		let mut saved_chunks = HashSet::new();
@@ -171,15 +183,7 @@ impl GameState {
 
 		for pos in to_be_updated {
 			if self.chunks.contains_key(&pos) {
-				let neighbors = chunk::FaceDirection::all().clone().map(|dir| {
-					let normal = dir.normal::<i32>();
-					self.chunks.get(&(pos + normal)).and_then(|c| Some(chunk::UnsafeChunkDataRef::new(&*c.data)))
-				});
-
-				self.chunks.get_mut(&pos).unwrap().update_mesh(
-					gfx,
-					&neighbors
-				);
+				self.update_chunk(gfx, pos);
 			}
 		}
 	}
@@ -212,10 +216,15 @@ impl State for GameState {
 				let loc_block_pos = self.renderer.camera.position.each_as::<i32>()
 					.zip_map(chunk::CHUNK_SIZE.each_as::<i32>(), |a, b| num::integer::mod_floor(a, b));
 
-				self.chunks.get_mut(&self.current_chunk_position).unwrap().data.set_block(loc_block_pos, Block {
-					id: id as u16,
-					state: 0
-				});
+				{
+					let chunk = self.chunks.get_mut(&self.current_chunk_position).unwrap();
+					chunk.data.set_block(loc_block_pos, Block {
+						id: id as u16,
+						state: 0
+					});
+				}
+
+				self.update_chunk(&context.gfx, self.current_chunk_position);
 			}
 		}
 	}

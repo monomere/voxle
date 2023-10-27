@@ -283,10 +283,10 @@ pub type Vec2<T> = Vector<T, 2>;
 pub type Vec3<T> = Vector<T, 3>;
 pub type Vec4<T> = Vector<T, 4>;
 
-pub fn vec1<T: Scalar>(x: T,) -> Vec1<T> { Vector([x]) }
-pub fn vec2<T: Scalar>(x: T, y: T) -> Vec2<T> { Vector([x, y]) }
-pub fn vec3<T: Scalar>(x: T, y: T, z: T) -> Vec3<T> { Vector([x, y, z]) }
-pub fn vec4<T: Scalar>(x: T, y: T, z: T, w: T) -> Vec4<T> { Vector([x, y, z, w]) }
+pub const fn vec1<T: Scalar>(x: T,) -> Vec1<T> { Vector([x]) }
+pub const fn vec2<T: Scalar>(x: T, y: T) -> Vec2<T> { Vector([x, y]) }
+pub const fn vec3<T: Scalar>(x: T, y: T, z: T) -> Vec3<T> { Vector([x, y, z]) }
+pub const fn vec4<T: Scalar>(x: T, y: T, z: T, w: T) -> Vec4<T> { Vector([x, y, z, w]) }
 
 pub type Vec1i32 = Vec1<i32>;
 pub type Vec2i32 = Vec2<i32>;
