@@ -36,7 +36,7 @@ impl CameraController {
 		self.capturing = true;
 	}
 
-	pub fn update_camera(&mut self, ctx: &mut UpdateContext, camera: &mut renderer::Camera, dt: f32) {
+	pub fn update_camera(&mut self, ctx: &mut UpdateContext, camera: &mut renderer::chunk::Camera, dt: f32) {
 		let delta = {
 			let mut res = glm::vec3(0.0, 0.0, 0.0);
 			if ctx.input().key(KeyCode::KeyD).held() { res.x += 1.0; }
@@ -135,7 +135,7 @@ impl CameraController {
 			// Keep the camera's angle from going too high/low.
 			let safe_angle: f32 = 3.141592 * 0.5 - 0.01; // glm::epsilon::<f32>()
 	
-			camera.pitch = glm::clamp_scalar(camera.pitch, -safe_angle, safe_angle);
+			camera.pitch = camera.pitch.clamp(-safe_angle, safe_angle);
 		}
 	}
 }

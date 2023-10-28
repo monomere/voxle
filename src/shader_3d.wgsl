@@ -1,6 +1,6 @@
 struct CameraUniform {
 	view_proj: mat4x4<f32>,
-};
+}
 
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
@@ -65,6 +65,19 @@ fn vs_main(
 }
 
 
+@group(1) @binding(0)
+var in_texture: texture_2d<f32>;
+@group(1) @binding(1)
+var in_sampler: sampler;
+
+struct LightingUniform {
+	sun_direction: vec4<f32>,
+	// sun_intensity: f32
+}
+
+@group(0) @binding(1)
+var<uniform> lighting: LightingUniform;
+
 struct PushConstants {
 	color: vec4<f32>
 }
@@ -74,7 +87,10 @@ var<push_constant> pushed: PushConstants;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 	// var sun_dir = normalize(vec3<f32>(2.0, 4.0, 1.0));
-	// var shadow = clamp(dot(sun_dir, in.normal), 0.1, 1.0);
+	var shadow = clamp(dot(-lighting.sun_direction.xyz, in.normal), 0.1, 1.0);
 	
-	return pushed.color * vec4<f32>(in.texcoord, 1.0, 1.0);// * shadow;
+	var color = textureSample(in_texture, in_sampler, in.texcoord);
+	// var color = vec4<f32>(in.texcoord, 1.0, 1.0);
+
+	return pushed.color * color * shadow;
 }

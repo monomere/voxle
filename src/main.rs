@@ -234,9 +234,11 @@ async fn run() {
 	let event_loop_start = std::time::Instant::now();
 	let mut last_render_time = std::time::Instant::now();
 	event_loop.run(move |event, elwt| {
-		gfx.egui_platform.handle_event(&gfx.window.window, &event);
-		if gfx.egui_platform.captures_event(&event) {
-			return;
+		if !gfx.window.capture_cursor {
+			gfx.egui_platform.handle_event(&gfx.window.window, &event);
+			if gfx.egui_platform.captures_event(&event) {
+				return;
+			}
 		}
 
     if gfx.window_mut().input.process_event(&event) {

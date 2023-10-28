@@ -4,6 +4,11 @@ use num_traits::FromPrimitive;
 use crate::{gfx, math::*};
 
 pub const CHUNK_SIZE: Vec3<usize> = Vector([32, 32, 32]);
+
+static_assertions::const_assert!(CHUNK_SIZE.0[0].is_power_of_two());
+static_assertions::const_assert!(CHUNK_SIZE.0[1].is_power_of_two());
+static_assertions::const_assert!(CHUNK_SIZE.0[2].is_power_of_two());
+
 pub const CHUNK_BLOCK_COUNT: usize = CHUNK_SIZE.0[0] * CHUNK_SIZE.0[1] * CHUNK_SIZE.0[2];
 
 #[derive(Clone, Copy)]
@@ -26,22 +31,21 @@ struct BlockTex(u32);
 
 impl BlockTex {
 	const SIZE: u32 = 16;
-	const TEXTURE_SIZE: Vec2u32 = vec2(64, 32);
 
 	fn rect(self) -> Vec4u32 {
 		let p = self.0 * Self::SIZE;
 		vec4(
-			p, 0,
-			p + 16, 16
+			p, 16,
+			p + 16, 0
 		)
 	}
 
-	fn uvs(self) -> Vec4f32 {
+	fn uvs(self, texture_size: Vec2u32) -> Vec4f32 {
 		self.rect().each_as::<f32>() / vec4(
-			Self::TEXTURE_SIZE.x as f32,
-			Self::TEXTURE_SIZE.y as f32,
-			Self::TEXTURE_SIZE.x as f32,
-			Self::TEXTURE_SIZE.y as f32,
+			texture_size.x as f32,
+			texture_size.y as f32,
+			texture_size.x as f32,
+			texture_size.y as f32,
 		)
 	}
 }
@@ -118,7 +122,7 @@ impl UnsafeChunkDataRef {
 		Self { _ptr: ptr }
 	}
 
-	fn get(&self) -> &ChunkData {
+	pub fn get(&self) -> &ChunkData {
 		unsafe { &*self._ptr }
 	}
 }
@@ -180,12 +184,12 @@ const CUBE_VERTICES: [[f32; 3]; 8] = [
 ];
 
 const CUBE_FACES: [(FaceDirection, [usize; 4]); 6] = [
-	(FaceDirection::PX, [0, 4, 5, 1]),
-	(FaceDirection::NX, [2, 6, 7, 3]),
-	(FaceDirection::PY, [0, 1, 2, 3]),
+	(FaceDirection::PX, [5, 4, 0, 1]),
+	(FaceDirection::NX, [7, 6, 2, 3]),
+	(FaceDirection::PY, [3, 2, 1, 0]),
 	(FaceDirection::NY, [4, 5, 6, 7]),
-	(FaceDirection::PZ, [0, 3, 7, 4]),
-	(FaceDirection::NZ, [1, 2, 6, 5]),
+	(FaceDirection::PZ, [4, 7, 3, 0]),
+	(FaceDirection::NZ, [6, 5, 1, 2]),
 ];
 
 impl ChunkData {
@@ -226,7 +230,8 @@ impl ChunkData {
 	pub fn generate_mesh(
 		&self,
 		chunk_position: Vec3i32,
-		chunk_neighbors: &[Option<UnsafeChunkDataRef>]
+		chunk_neighbors: &[Option<UnsafeChunkDataRef>],
+		texture_size: Vec2u32
 	) -> (Vec<super::renderer::chunk::BlockVertex>, Vec<u32>) {
 		let mut vertices = Vec::<super::renderer::chunk::BlockVertex>::new();
 		let mut indices = Vec::<u32>::new();
@@ -279,10 +284,10 @@ impl ChunkData {
 						let start_index = vertices.len() as u32;
 
 						let face_uvs = [
-							vec2(0.0, 0.0),
-							vec2(1.0, 0.0),
 							vec2(1.0, 1.0),
 							vec2(0.0, 1.0),
+							vec2(0.0, 0.0),
+							vec2(1.0, 0.0),
 						];
 
 						let make_uvs = |i: usize, uvs: Vec4f32| {
@@ -296,7 +301,7 @@ impl ChunkData {
 								texcoord: make_uvs(
 									index_index,
 									BlockId::from_u16(block.id)
-										.and_then(|id| id.textures().map(|tex| tex.in_direction(direction).uvs()))
+										.and_then(|id| id.textures().map(|tex| tex.in_direction(direction).uvs(texture_size)))
 										.unwrap_or(vec4(0.0, 0.0, 0.0, 0.0))
 								).0,
 								data: block.id as u32 | (direction as u32) << 16,
@@ -330,8 +335,8 @@ impl Chunk {
 		}
 	}
 
-	pub fn update_mesh(&mut self, gfx: &gfx::Gfx, chunk_neighbors: &[Option<UnsafeChunkDataRef>]) {
-		let (vertices, indices) = self.data.generate_mesh(self.position, chunk_neighbors);
+	pub fn update_mesh(&mut self, gfx: &gfx::Gfx, chunk_neighbors: &[Option<UnsafeChunkDataRef>], texture_size: Vec2u32) {
+		let (vertices, indices) = self.data.generate_mesh(self.position, chunk_neighbors, texture_size);
 		if let Some(ref mut mesh) = &mut self.mesh {
 			mesh.update(gfx, &vertices, &indices);
 		} else {

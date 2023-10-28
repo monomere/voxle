@@ -22,11 +22,11 @@ impl<T: Scalar, const N: usize> Vector<T, N> {
 
 	pub fn zip_map<
 		T2: Scalar,
-		V2: Into<Vector<T2, N>>,
+		// V2: ,
 		U: Scalar,
 		F: Fn(T, T2) -> U
-	>(&self, other: V2, f: F) -> Vector<U, N> {
-		let other = other.into();
+	>(&self, other: Vector<T2, N>, f: F) -> Vector<U, N> {
+		// let other = other.into();
 		Vector::<U, N>::make(|i| f(self.0[i], other.0[i]))
 	}
 }
