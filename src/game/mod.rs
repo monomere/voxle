@@ -10,6 +10,69 @@ mod renderer;
 mod camera;
 
 
+#[derive(Debug, Clone, Copy)]
+pub enum FaceDirection {
+	PX = 0, NX = 1,
+	PY = 2, NY = 3,
+	PZ = 4, NZ = 5,
+}
+
+impl FaceDirection {
+	pub const fn all() -> &'static [FaceDirection; FaceDirection::count()] {
+		&[Self::PX, Self::NX, Self::PY, Self::NY, Self::PZ, Self::NZ]
+	}
+
+	pub fn normal<T: Scalar + From<i32>>(&self) -> Vec3<T> {
+		match self {
+			Self::PX => vec3(( 1).into(), ( 0).into(), ( 0).into()),
+			Self::NX => vec3((-1).into(), ( 0).into(), ( 0).into()),
+			Self::PY => vec3(( 0).into(), ( 1).into(), ( 0).into()),
+			Self::NY => vec3(( 0).into(), (-1).into(), ( 0).into()),
+			Self::PZ => vec3(( 0).into(), ( 0).into(), ( 1).into()),
+			Self::NZ => vec3(( 0).into(), ( 0).into(), (-1).into()),
+		}
+	}
+
+	/// clamps the axis of the normal, leaves other axes.
+	pub fn zero_axis<T: Scalar + From<i32>>(
+		&self,
+		Vector([x, y, z]): Vec3<T>,
+		Vector([nx, ny, nz]): Vec3<T>,
+		Vector([px, py, pz]): Vec3<T>,
+	) -> Vec3<T> {
+		match self {
+			Self::PX => vec3(px, y, z),
+			Self::NX => vec3(nx, y, z),
+			Self::PY => vec3(x, py, z),
+			Self::NY => vec3(x, ny, z),
+			Self::PZ => vec3(x, y, pz),
+			Self::NZ => vec3(x, y, nz),
+		}
+	}
+
+	pub const fn count() -> usize { 6 }
+}
+
+pub const CUBE_VERTICES: [[f32; 3]; 8] = [
+	// X  /  Y  /  Z //
+	[ 0.5,  0.5,  0.5], // 0
+	[ 0.5,  0.5, -0.5], // 1
+	[-0.5,  0.5, -0.5], // 2
+	[-0.5,  0.5,  0.5], // 3
+	[ 0.5, -0.5,  0.5], // 4
+	[ 0.5, -0.5, -0.5], // 5
+	[-0.5, -0.5, -0.5], // 6
+	[-0.5, -0.5,  0.5], // 7
+];
+
+pub const CUBE_FACES: [(FaceDirection, [usize; 4]); 6] = [
+	(FaceDirection::PX, [5, 4, 0, 1]),
+	(FaceDirection::NX, [7, 6, 2, 3]),
+	(FaceDirection::PY, [3, 2, 1, 0]),
+	(FaceDirection::NY, [4, 5, 6, 7]),
+	(FaceDirection::PZ, [4, 7, 3, 0]),
+	(FaceDirection::NZ, [6, 5, 1, 2]),
+];
 struct WorldGen {
 	noise: noise::Perlin // noise::Fbm<noise::Perlin>
 }
@@ -105,6 +168,21 @@ pub fn world_to_chunk_local(world: Vec3f32) -> Vec3i32 {
 	world.zip_map(chunk::CHUNK_SIZE, |world, chunk| num::integer::mod_floor(world.round() as i32, chunk as i32))
 }
 
+#[derive(Debug, Clone, Copy)]
+struct BlockTarget {
+	/// chunk position (in chunks)
+	chunk: Vec3i32,
+	// block position local to chunk
+	block: Vec3i32,
+	face: Vec3f32
+}
+
+impl BlockTarget {
+	pub fn to_global(self) -> Vec3i32 {
+		self.chunk * chunk::CHUNK_SIZE.each_as() + self.block
+	}
+}
+
 pub struct GameState {
 	_world: shipyard::World,
 	chunks: HashMap<Vec3i32, chunk::Chunk>,
@@ -113,7 +191,8 @@ pub struct GameState {
 	render_distance: i32,
 	current_chunk_position: Vec3i32,
 	render_wireframe: bool,
-	worldgen: WorldGen
+	worldgen: WorldGen,
+	target_block_position: Option<BlockTarget>,
 }
 
 impl GameState {
@@ -128,12 +207,13 @@ impl GameState {
 			render_distance: 8,
 			current_chunk_position: (0, 0, 0).vector(),
 			render_wireframe: false,
-			worldgen: WorldGen::new(69)
+			worldgen: WorldGen::new(69),
+			target_block_position: None,
 		}
 	}
 
 	fn update_chunk_quick(&mut self, gfx: &gfx::Gfx, pos: Vec3i32) {
-		let neighbors = chunk::FaceDirection::all().clone().map(|dir| {
+		let neighbors = FaceDirection::all().clone().map(|dir| {
 			let normal = dir.normal::<i32>();
 			self.chunks.get(&(pos + normal)).and_then(|c| Some(chunk::UnsafeChunkDataRef::new(&*c.data)))
 		});
@@ -148,7 +228,7 @@ impl GameState {
 	fn update_chunk(&mut self, gfx: &gfx::Gfx, pos: Vec3i32) {
 		self.update_chunk_quick(gfx, pos);
 
-		let to_update: Vec<Vec3i32> = chunk::FaceDirection::all().iter().filter_map(|dir| {
+		let to_update: Vec<Vec3i32> = FaceDirection::all().iter().filter_map(|dir| {
 			let normal = dir.normal::<i32>();
 			self.chunks.contains_key(&(pos + normal)).then_some(pos + normal)
 		}).collect();
@@ -178,7 +258,7 @@ impl GameState {
 								to_be_updated.insert(abs_pos);
 
 								// update neighbor meshes
-								for dir in chunk::FaceDirection::all() {
+								for dir in FaceDirection::all() {
 									let normal = dir.normal::<i32>();
 									let abs_pos = abs_pos + normal;
 									if self.chunks.contains_key(&abs_pos) {
@@ -211,12 +291,49 @@ impl GameState {
 			}
 		}
 	}
+
+	fn raycast_target(&mut self) {
+		let dir = self.renderer.chunk_renderer.camera.direction().normalized();
+		let step = 0.1;
+		let mut len = 0.0;
+		let mut ray = self.renderer.chunk_renderer.camera.position.clone();
+		let mut found = false;
+		let one_over_dir = dir.map(|c| 1.0 / c);
+		while len < 16.0 {
+			let chunk_position = world_to_map(ray);
+			let block_position = world_to_chunk_local(ray);
+			if let Some(chunk) = &self.chunks.get(&chunk_position) {
+				if chunk.data.get_block(block_position).is_some_and(|b| b.is_solid()) {
+					// https://www.shadertoy.com/view/ld23DV (Inigo Quilez)
+					let ro = (ray - dir * step) - chunk.position.each_as() - block_position.each_as();
+					let n = one_over_dir * ro;
+					let k = one_over_dir.abs() * 0.5;
+					let t1 = -n - k;
+					let t_n = t1.x.max(t1.y).max(t1.z);
+					let normal = t1.step(t_n);
+					self.target_block_position = Some(BlockTarget {
+						chunk: chunk_position,
+						block: block_position,
+						face: normal
+					});
+					found = true;
+					break;
+				}
+			}
+			len += step;
+			ray += dir * step;
+		}
+		if !found {
+			self.target_block_position = None;
+		}
+	}
 }
 
 impl State for GameState {
 	fn load(&mut self, context: &mut crate::LoadContext) {
 		self.camera_controller.load(context);
 		self.generate_chunks(&context.gfx);
+		self.renderer.chunk_renderer.set_sun_direction(vec4::<f32>(4.0, -5.0, 5.0, 1.0).normalized());
 	}
 
 	fn update(&mut self, context: &mut UpdateContext) {
@@ -250,7 +367,7 @@ impl State for GameState {
 			}
 		}
 
-		self.renderer.chunk_renderer.set_sun_direction(vec4::<f32>(4.0, -5.0, 5.0, 1.0).normalized());
+		self.raycast_target();
 		self.renderer.update();
 	}
 	
@@ -259,7 +376,7 @@ impl State for GameState {
 	}
 
 	fn ui<'a>(&'a self, ctx: &egui::Context) {
-		egui::Window::new("debug").show(ctx, |ui| {
+		egui::Window::new("debug").default_open(false).show(ctx, |ui| {
 			ui.label(format!("chunk: {}", self.current_chunk_position));
 			ui.label(format!("eye: {}", self.renderer.chunk_renderer.camera.position));
 			
@@ -269,6 +386,7 @@ impl State for GameState {
 
 			ui.label(format!("block: {:?}", block.map(|b| b.id)));
 			ui.label(format!("   at: {:?}", loc_block_pos));
+			ui.label(format!("target: {:?}", self.target_block_position));
 		});
 	}
 }
@@ -283,10 +401,20 @@ impl GameState {
 	}
 
 	fn on_render<'a>(&'a self, gfx: &gfx::Gfx, ctx: &mut GameRenderContext<'a, '_>) {
-		self.render_chunks(&mut ctx.chunk_context(gfx, renderer::chunk::ChunkRenderMode::Normal));
+		{
+			let mut chunk_ctx = ctx.begin_chunk_context(gfx);
+			
+			chunk_ctx.set_mode(renderer::chunk::ChunkRenderMode::Normal);
+			self.render_chunks(&mut chunk_ctx);
 
-		if self.render_wireframe {
-			self.render_chunks(&mut ctx.chunk_context(gfx, renderer::chunk::ChunkRenderMode::Wireframe));
+			if self.render_wireframe {
+				chunk_ctx.set_mode(renderer::chunk::ChunkRenderMode::Wireframe);
+				self.render_chunks(&mut chunk_ctx);
+			}
+
+			if let Some(position) = self.target_block_position {
+				chunk_ctx.render_outline(position.to_global().each_as())
+			}
 		}
 	}
 }

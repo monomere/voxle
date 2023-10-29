@@ -4,6 +4,12 @@ use crate::{gfx, math::{Vec2u32, vec2, vec3, Vec3f32, Vector, Vec4f32}};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct OutlineVertex {
+	pub position: [f32; 3],
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct BlockVertex {
 	pub position: [f32; 3],
 	pub data: u32,
@@ -12,11 +18,17 @@ pub struct BlockVertex {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct ChunkPushConstants {
+struct BlockPushConstants {
 	color: [f32; 4]
 }
 
-fn create_pipeline(
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct OutlinePushConstants {
+	position: [f32; 3]
+}
+
+fn create_block_pipeline(
 	gfx: &gfx::Gfx,
 	layout: &wgpu::PipelineLayout,
 	shader: &wgpu::ShaderModule,
@@ -96,6 +108,67 @@ fn create_pipeline(
 	})
 }
 
+fn create_outline_pipeline(
+	gfx: &gfx::Gfx,
+	layout: &wgpu::PipelineLayout,
+	shader: &wgpu::ShaderModule,
+	depth_format: wgpu::TextureFormat
+) -> wgpu::RenderPipeline {
+	gfx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+		label: None,
+		layout: Some(&layout),
+		vertex: wgpu::VertexState {
+			module: &shader,
+			entry_point: "vs_main",
+			buffers: &[wgpu::VertexBufferLayout {
+				array_stride: std::mem::size_of::<OutlineVertex>() as wgpu::BufferAddress,
+				step_mode: wgpu::VertexStepMode::Vertex,
+				attributes: &[
+					// position
+					wgpu::VertexAttribute {
+						format: wgpu::VertexFormat::Float32x3,
+						offset: 0,
+						shader_location: 0
+					},
+				],
+			}]
+		},
+		fragment: Some(wgpu::FragmentState {
+			module: &shader,
+			entry_point: "fs_main",
+			targets: &[
+				Some(wgpu::ColorTargetState {
+					format: gfx.config.format,
+					blend: None,
+					write_mask: wgpu::ColorWrites::ALL
+				})
+			]
+		}),
+		primitive: wgpu::PrimitiveState {
+			topology: wgpu::PrimitiveTopology::LineList,
+			strip_index_format: None,
+			front_face: wgpu::FrontFace::Cw,
+			cull_mode: Some(wgpu::Face::Back),
+			unclipped_depth: false,
+			polygon_mode: wgpu::PolygonMode::Line,
+			conservative: false
+		},
+		depth_stencil: Some(wgpu::DepthStencilState {
+			format: depth_format,
+			depth_write_enabled: false,
+			depth_compare: wgpu::CompareFunction::LessEqual,
+			stencil: wgpu::StencilState::default(),
+			bias: wgpu::DepthBiasState::default(),
+		}),
+		multisample: wgpu::MultisampleState {
+			count: 4,
+			mask: !0,
+			alpha_to_coverage_enabled: false
+		},
+		multiview: None
+	})
+}
+
 pub struct Camera {
 	pub position: Vec3f32,
 	pub yaw: f32,
@@ -108,11 +181,7 @@ pub struct Camera {
 
 impl Camera {
 	fn build_view_proj_matrix(&self) -> glm::Mat4 {
-		let direction = vec3(
-			self.yaw.cos() * self.pitch.cos(),
-			self.pitch.sin(),
-			self.yaw.sin() * self.pitch.cos(),
-		);
+		let direction = self.direction();
 
 		let view = glm::look_at_rh(
 			&glm::vec3(self.position.x, self.position.y, self.position.z),
@@ -123,6 +192,14 @@ impl Camera {
 		let proj = glm::perspective_rh_zo(self.aspect, glm::radians(&glm::vec1(self.fovy)).x, self.znear, self.zfar);
 
 		proj * view
+	}
+
+	pub fn direction(&self) -> Vec3f32 {
+		vec3(
+			self.yaw.cos() * self.pitch.cos(),
+			self.pitch.sin(),
+			self.yaw.sin() * self.pitch.cos(),
+		)
 	}
 
 	fn to_uniform(&self) -> CameraUniform {
@@ -199,13 +276,15 @@ impl WorldUniforms {
 }
 
 pub struct ChunkRenderer {
-	render_pipeline: wgpu::RenderPipeline,
-	wf_render_pipeline: wgpu::RenderPipeline,
+	block_render_pipeline: wgpu::RenderPipeline,
+	block_wf_render_pipeline: wgpu::RenderPipeline,
+	outline_render_pipeline: wgpu::RenderPipeline,
 	uniform_bind_group: wgpu::BindGroup,
 	world_uniforms_buffer: wgpu::Buffer,
 	texture_bind_group: wgpu::BindGroup,
 	texture: gfx::Texture,
 	world_uniforms: WorldUniforms,
+	outline_mesh: gfx::Mesh<OutlineVertex>,
 	pub camera: Camera
 }
 
@@ -224,11 +303,6 @@ impl ChunkRenderer {
 			znear: 0.01,
 			zfar: 1000.0
 		};
-
-		let shader = gfx.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-			label: None,
-			source: wgpu::ShaderSource::Wgsl(std::fs::read_to_string("src/shader_3d.wgsl").unwrap().into())
-		});
 
 		let world_bind_group_layout = gfx.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
 			label: None,
@@ -278,20 +352,33 @@ impl ChunkRenderer {
 			],
 		});
 
-		let layout = gfx.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+		let block_pipeline_layout = gfx.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 			label: None,
 			bind_group_layouts: &[&world_bind_group_layout, &texture_bind_group_layout],
 			push_constant_ranges: &[wgpu::PushConstantRange {
-				range: 0..std::mem::size_of::<ChunkPushConstants>() as u32,
+				range: 0..std::mem::size_of::<BlockPushConstants>() as u32,
 				stages: wgpu::ShaderStages::FRAGMENT
 			}]
 		});
 
-		let render_pipeline = create_pipeline(gfx, &layout, &shader, wgpu::PolygonMode::Fill, super::GameRenderer::DEPTH_FORMAT);
-		let wf_render_pipeline = create_pipeline(gfx, &layout, &shader, wgpu::PolygonMode::Line, super::GameRenderer::DEPTH_FORMAT);
+		let outline_pipeline_layout = gfx.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+			label: None,
+			bind_group_layouts: &[&world_bind_group_layout],
+			push_constant_ranges: &[wgpu::PushConstantRange {
+				range: 0..std::mem::size_of::<OutlinePushConstants>() as u32,
+				stages: wgpu::ShaderStages::VERTEX
+			}]
+		});
+
+		let block_shader = gfx.device.create_shader_module(super::load_shader("game/block").unwrap());
+		let outline_shader = gfx.device.create_shader_module(super::load_shader("game/outline").unwrap());
+
+		let block_render_pipeline = create_block_pipeline(gfx, &block_pipeline_layout, &block_shader, wgpu::PolygonMode::Fill, super::GameRenderer::DEPTH_FORMAT);
+		let block_wf_render_pipeline = create_block_pipeline(gfx, &block_pipeline_layout, &block_shader, wgpu::PolygonMode::Line, super::GameRenderer::DEPTH_FORMAT);
+		let outline_render_pipeline = create_outline_pipeline(gfx, &outline_pipeline_layout, &outline_shader, super::GameRenderer::DEPTH_FORMAT);
 
 		let texture = {
-			let bytes = image::load(std::io::BufReader::new(std::fs::File::open("data/spritesheet.png").unwrap()), image::ImageFormat::Png).unwrap();
+			let bytes = image::load(std::io::BufReader::new(std::fs::File::open("data/textures/spritesheet.png").unwrap()), image::ImageFormat::Png).unwrap();
 			let rgba8 = bytes.to_rgba8();
 			let texture = gfx::Texture::create_binding_texture(
 				gfx,
@@ -330,7 +417,7 @@ impl ChunkRenderer {
 		});
 
 		let world_uniforms = Self::create_world_uniforms(gfx);
-		let uniform_buffer = Self::create_uniform_buffer(gfx, &world_uniforms.data);
+		let world_uniforms_buffer = Self::create_uniform_buffer(gfx, &world_uniforms.data);
 
 		let uniform_bind_group = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
 			label: None,
@@ -339,7 +426,7 @@ impl ChunkRenderer {
 				wgpu::BindGroupEntry {
 					binding: 0,
 					resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-						buffer: &uniform_buffer,
+						buffer: &world_uniforms_buffer,
 						offset: world_uniforms.camera_uniform_offset() as u64,
 						size: Some(std::num::NonZeroU64::new(world_uniforms.camera_uniform_size() as u64).unwrap())
 					})
@@ -347,7 +434,7 @@ impl ChunkRenderer {
 				wgpu::BindGroupEntry {
 					binding: 1,
 					resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-						buffer: &uniform_buffer,
+						buffer: &world_uniforms_buffer,
 						offset: world_uniforms.lighting_uniform_offset() as u64,
 						size: Some(std::num::NonZeroU64::new(world_uniforms.lighting_uniform_size() as u64).unwrap())
 					})
@@ -355,14 +442,26 @@ impl ChunkRenderer {
 			]
 		});
 
+		let outline_mesh = {
+			let vertices = crate::game::CUBE_VERTICES.map(|v| OutlineVertex { position: v });
+			let indices: [u32; 24] = [
+				0, 1,  1, 2,  2, 3,  3, 0,
+				4, 5,  5, 6,  6, 7,  7, 4,
+				0, 4,  1, 5,  2, 6,  3, 7,
+			];
+			gfx::Mesh::new(gfx, &vertices, &indices)
+		};
+
 		Self {
-			render_pipeline,
-			wf_render_pipeline,
+			block_render_pipeline,
+			block_wf_render_pipeline,
+			outline_render_pipeline,
 			texture,
 			texture_bind_group,
-			world_uniforms_buffer: uniform_buffer,
+			world_uniforms_buffer,
 			uniform_bind_group,
 			world_uniforms,
+			outline_mesh,
 			camera
 		}
 	}
@@ -407,7 +506,6 @@ pub struct ChunkRenderContext<'a, 'b> {
 impl<'a, 'b> ChunkRenderContext<'a, 'b> {
 	pub(super) fn begin(
 		gfx: &gfx::Gfx,
-		mode: ChunkRenderMode,
 		renderer: &'a super::GameRenderer,
 		render_pass: &'b mut wgpu::RenderPass<'a>
 	) -> ChunkRenderContext<'a, 'b> {
@@ -415,7 +513,6 @@ impl<'a, 'b> ChunkRenderContext<'a, 'b> {
 			renderer,
 			render_pass
 		};
-		ctx.set_mode(mode);
 		gfx.queue.write_buffer(
 			&renderer.chunk_renderer.world_uniforms_buffer,
 			0,
@@ -426,15 +523,15 @@ impl<'a, 'b> ChunkRenderContext<'a, 'b> {
 	
 	// TODO: states/game/renderer -> renderer?
 
-	fn set_mode(&mut self, mode: ChunkRenderMode) {
+	pub fn set_mode(&mut self, mode: ChunkRenderMode) {
 		self.render_pass.set_pipeline(match mode {
-			ChunkRenderMode::Normal => &self.renderer.chunk_renderer.render_pipeline,
-			ChunkRenderMode::Wireframe => &self.renderer.chunk_renderer.wf_render_pipeline,
+			ChunkRenderMode::Normal => &self.renderer.chunk_renderer.block_render_pipeline,
+			ChunkRenderMode::Wireframe => &self.renderer.chunk_renderer.block_wf_render_pipeline,
 		});
 
 		let pushed = match mode {
-			ChunkRenderMode::Normal => ChunkPushConstants { color: [1.0, 1.0, 1.0, 1.0] },
-			ChunkRenderMode::Wireframe => ChunkPushConstants { color: [0.0, 0.0, 0.0, 1.0] },
+			ChunkRenderMode::Normal => BlockPushConstants { color: [1.0, 1.0, 1.0, 1.0] },
+			ChunkRenderMode::Wireframe => BlockPushConstants { color: [0.0, 0.0, 0.0, 1.0] },
 		};
 
 		self.render_pass.set_bind_group(0, &self.renderer.chunk_renderer.uniform_bind_group, &[]);
@@ -447,5 +544,14 @@ impl<'a, 'b> ChunkRenderContext<'a, 'b> {
 			mesh.render(self.render_pass)
 		}
 	}
-}
 
+	pub fn render_outline(&mut self, position: Vec3f32) {
+		self.render_pass.set_pipeline(&self.renderer.chunk_renderer.outline_render_pipeline);
+		self.render_pass.set_bind_group(0, &self.renderer.chunk_renderer.uniform_bind_group, &[]);
+		self.render_pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&OutlinePushConstants {
+			position: position.0
+		}));
+
+		self.renderer.chunk_renderer.outline_mesh.render(self.render_pass);
+	}
+}

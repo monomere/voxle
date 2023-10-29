@@ -1,13 +1,46 @@
-use wgpu::util::DeviceExt;
-use crate::{gfx::{self, graph}, math::{self, Vector, vec3}};
+use crate::gfx::{self, graph};
 
 use self::chunk::ChunkRenderContext;
 
 pub mod chunk;
+pub mod ui;
 
+pub fn load_shader_module(name: &str) -> Result<String, std::io::Error> {
+	use std::io::Read;
+
+	let base_path = std::path::PathBuf::from("data/shaders");
+	let module_path = base_path.join(name).with_extension("wgsl");
+	if !module_path.is_file() {
+		panic!("Shader not found: {:?}", module_path);
+	}
+
+	let mut module_source = String::new();
+	std::io::BufReader::new(std::fs::File::open(&module_path)?).read_to_string(&mut module_source)?;
+	let mut module_string = String::new();
+
+	let first_line = module_source.lines().next().unwrap();
+	if first_line.starts_with("//!use") {
+		for include in first_line.split_whitespace().skip(1) {
+			module_string.push_str(&*load_shader_module(include).unwrap());
+		}
+	}
+
+	module_string.push_str(&module_source);
+	Ok(module_string)
+}
+
+pub fn load_shader(name: &str) -> Result<wgpu::ShaderModuleDescriptor, std::io::Error>  {
+	let shader_code = load_shader_module(name)?;
+
+	Ok(wgpu::ShaderModuleDescriptor {
+		label: Some(name),
+		source: wgpu::ShaderSource::Wgsl(shader_code.into()),
+	})
+}
 
 pub struct GameRenderer {
 	pub chunk_renderer: chunk::ChunkRenderer,
+	pub ui_renderer: ui::UiRenderer,
 	// uniform_buffer: wgpu::Buffer,
 	graph: graph::Graph<super::GameState>,
 }
@@ -55,6 +88,7 @@ impl GameRenderer {
 	
 		Self {
 			chunk_renderer: chunk::ChunkRenderer::new(gfx),
+			ui_renderer: ui::UiRenderer::new(gfx),
 			graph: graph_spec.build(gfx),
 		}
 	}
@@ -78,7 +112,7 @@ pub struct GameRenderContext<'a, 'b> {
 }
 
 impl<'a, 'b> GameRenderContext<'a, 'b> {
-	pub fn chunk_context<'ctx>(&'ctx mut self, gfx: &gfx::Gfx, mode: chunk::ChunkRenderMode) -> ChunkRenderContext<'a, 'ctx> {
-		ChunkRenderContext::begin(gfx, mode, self.renderer, self.render_pass)
+	pub fn begin_chunk_context<'ctx>(&'ctx mut self, gfx: &gfx::Gfx) -> ChunkRenderContext<'a, 'ctx> {
+		ChunkRenderContext::begin(gfx, self.renderer, self.render_pass)
 	}
 }

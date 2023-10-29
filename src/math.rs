@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::{ops::*, fmt::{Display, Write}};
-use num_traits::AsPrimitive;
+use num::cast::AsPrimitive;
 
 pub trait Scalar: 'static + Copy + Clone + PartialEq + std::fmt::Debug {}
 impl<T: 'static + Copy + Clone + PartialEq + std::fmt::Debug> Scalar for T {}
@@ -83,7 +83,7 @@ mag_impl_for_vec!(i32, f64);
 mag_impl_for_vec!(i64, f32);
 
 impl<T: Scalar, const N: usize> Vector<T, N> {
-	pub fn lerp<U: num_traits::One + Scalar>(
+	pub fn lerp<U: num::One + Scalar>(
 		self,
 		target: Vector<T, N>,
 		time: U
@@ -96,6 +96,24 @@ impl<T: Scalar, const N: usize> Vector<T, N> {
 	{
 		self * (U::one() - time) + target * time
 	}
+
+	pub fn abs(self) -> Self
+	where
+		T: num::Signed
+	{
+		self.map(|c| num::abs(c))
+	}
+	pub fn step<E: Into<Vector<T, N>>>(
+		self,
+		edge: E
+	) -> Vector<T, N>
+	where
+		T: num::One + num::Zero,
+		T: PartialOrd,
+	{
+		let edge = edge.into();
+		self.zip_map(edge, |c, e| if c < e { T::zero() } else { T::one() })
+	}
 }
 
 
@@ -107,7 +125,7 @@ impl<T: Scalar, const N: usize> Vector<T, N> {
 	}
 }
 
-impl<T: Scalar + num_traits::Zero, const N: usize> Vector<T, N> {
+impl<T: Scalar + num::Zero, const N: usize> Vector<T, N> {
 	pub fn zero() -> Self {
 		Self::make(|_| T::zero())
 	}
@@ -337,4 +355,38 @@ impl<T: Scalar + Display, const N: usize> std::fmt::Display for Vector<T, N> {
 
 		f.write_char(')')
 	}
+}
+
+pub struct Rect<T: Scalar> {
+	pub x: T,
+	pub y: T,
+	pub w: T,
+	pub h: T,
+}
+
+impl<T: Scalar> Rect<T> {
+	pub fn x1(&self) -> T { self.x }
+	pub fn y1(&self) -> T { self.y }
+
+	// TODO: return type to add output
+	pub fn x2(&self) -> T where T: Add<Output = T> { self.x + self.w }
+	pub fn y2(&self) -> T where T: Add<Output = T> { self.y + self.h }
+}
+
+// TODO: matrix types
+
+pub fn ortho_matrix(
+	left: f32, right: f32,
+	bottom: f32, top: f32,
+) -> [[f32; 4]; 4] {
+	[
+		[2.0 / (right - left), 0.0, 0.0, 0.0],
+		[0.0, 2.0 / (bottom - top), 0.0, 0.0],
+		[0.0, 0.0, -1.0, 0.0],
+		[
+			- (right + left) / (right - left),
+			- (top + bottom) / (top - bottom),
+			0.0, 1.0
+		],
+	]
 }

@@ -10,9 +10,9 @@ use winit::{
 
 mod gfx;
 mod state;
-mod states;
+mod game;
 mod polyfill;
-mod gui;
+mod imgui;
 mod math;
 
 extern crate nalgebra_glm as glm;
@@ -222,7 +222,7 @@ async fn run() {
 	}).await);
 
 	
-	let mut state = states::game::GameState::new(&gfx);
+	let mut state = game::GameState::new(&gfx);
 
 	{
 		let mut context = LoadContext { gfx: &mut gfx };
