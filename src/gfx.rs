@@ -278,7 +278,6 @@ impl Texture {
 			dimension: wgpu::TextureDimension::D2,
 			format,
 			usage: wgpu::TextureUsages::COPY_DST
-			     | wgpu::TextureUsages::TEXTURE_BINDING
 			     | wgpu::TextureUsages::TEXTURE_BINDING,
 			view_formats: &[],
 		});
@@ -286,15 +285,15 @@ impl Texture {
 		let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
 		let sampler = gfx.device.create_sampler(&wgpu::SamplerDescriptor {
-			address_mode_u: wgpu::AddressMode::ClampToEdge,
-			address_mode_v: wgpu::AddressMode::ClampToEdge,
-			address_mode_w: wgpu::AddressMode::ClampToEdge,
+			address_mode_u: wgpu::AddressMode::Repeat,
+			address_mode_v: wgpu::AddressMode::Repeat,
+			address_mode_w: wgpu::AddressMode::Repeat,
 			mag_filter: wgpu::FilterMode::Nearest,
 			min_filter: wgpu::FilterMode::Nearest,
 			mipmap_filter: wgpu::FilterMode::Nearest,
 			compare: None,
 			lod_min_clamp: 0.0,
-			lod_max_clamp: 100.0,
+			lod_max_clamp: 0.0,
 			..Default::default()
 		});
 
@@ -302,15 +301,15 @@ impl Texture {
 	}
 }
 
-pub struct UiContext {
-	sections: Vec<wgpu_text::glyph_brush::OwnedSection>
-}
+// pub struct UiContext {
+// 	sections: Vec<wgpu_text::glyph_brush::OwnedSection>
+// }
 
-impl UiContext {
-	pub fn section(&mut self, s: wgpu_text::glyph_brush::Section) {
-		self.sections.push(s.to_owned());
-	}
-}
+// impl UiContext {
+// 	pub fn section(&mut self, s: wgpu_text::glyph_brush::Section) {
+// 		self.sections.push(s.to_owned());
+// 	}
+// }
 
 pub struct RenderContext<'a> {
 	pub gfx: &'a Gfx,
@@ -331,14 +330,14 @@ impl<'a> RenderContext<'a> {
 pub trait Vertex = Clone + Copy + bytemuck::Zeroable + bytemuck::Pod;
 
 pub struct Mesh<V: Vertex> {
-	buffers: MeshBuffers<V>,
+	pub buffers: MeshBuffers<V>,
 }
 
-struct MeshBuffers<V: Vertex> {
-	index_count: usize,
-	vertex_count: usize,
-	vertex_buffer: wgpu::Buffer,
-	index_buffer: wgpu::Buffer,
+pub struct MeshBuffers<V: Vertex> {
+	pub index_count: usize,
+	pub vertex_count: usize,
+	pub vertex_buffer: wgpu::Buffer,
+	pub index_buffer: wgpu::Buffer,
 	_pd: PhantomData<V>
 }
 

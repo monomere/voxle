@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::{gfx, math::{Vec2u32, vec2, vec3, Vec3f32, Vector, Vec4f32}};
+use crate::{gfx, math::{Vec2u32, vec2, vec3, Vec3f32, Vector, Vec4f32}, game::texture};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -36,7 +36,7 @@ fn create_block_pipeline(
 	depth_format: wgpu::TextureFormat
 ) -> wgpu::RenderPipeline {
 	gfx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-		label: None,
+		label: Some("Block Pipeline"),
 		layout: Some(&layout),
 		vertex: wgpu::VertexState {
 			module: &shader,
@@ -94,13 +94,13 @@ fn create_block_pipeline(
 			},
 			depth_compare: match polymode {
 				wgpu::PolygonMode::Line => wgpu::CompareFunction::LessEqual,
-				_ => wgpu::CompareFunction::Less,
+				_ => wgpu::CompareFunction::LessEqual,
 			},
 			stencil: wgpu::StencilState::default(),
 			bias: wgpu::DepthBiasState::default(),
 		}),
 		multisample: wgpu::MultisampleState {
-			count: 4,
+			count: super::GameRenderer::SAMPLES,
 			mask: !0,
 			alpha_to_coverage_enabled: false
 		},
@@ -115,7 +115,7 @@ fn create_outline_pipeline(
 	depth_format: wgpu::TextureFormat
 ) -> wgpu::RenderPipeline {
 	gfx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-		label: None,
+		label: Some("Outline Pipeline"),
 		layout: Some(&layout),
 		vertex: wgpu::VertexState {
 			module: &shader,
@@ -156,12 +156,12 @@ fn create_outline_pipeline(
 		depth_stencil: Some(wgpu::DepthStencilState {
 			format: depth_format,
 			depth_write_enabled: false,
-			depth_compare: wgpu::CompareFunction::LessEqual,
+			depth_compare: wgpu::CompareFunction::Less,
 			stencil: wgpu::StencilState::default(),
 			bias: wgpu::DepthBiasState::default(),
 		}),
 		multisample: wgpu::MultisampleState {
-			count: 4,
+			count: super::GameRenderer::SAMPLES,
 			mask: !0,
 			alpha_to_coverage_enabled: false
 		},
@@ -245,10 +245,12 @@ impl WorldUniforms {
 		}
 	}
 
+	#[allow(dead_code)]
 	fn camera_uniform<'a>(&'a self) -> &'a CameraUniform {
 		bytemuck::from_bytes(&self.data[self.camera_uniform_range()])
 	}
 
+	#[allow(dead_code)]
 	fn lighting_uniform<'a>(&'a self) -> &'a LightingUniform {
 		bytemuck::from_bytes(&self.data[self.lighting_uniform_range()])
 	}
@@ -293,7 +295,7 @@ impl ChunkRenderer {
 		WorldUniforms::new(gfx.device.limits().min_uniform_buffer_offset_alignment as usize)
 	}
 
-	pub fn new(gfx: &gfx::Gfx) -> Self {
+	pub fn new(gfx: &gfx::Gfx, block_textures: texture::LoadedTextures) -> Self {
 		let camera = Camera {
 			position: Vector([0.0, 0.5, -2.0]),
 			yaw: 3.0 * glm::quarter_pi::<f32>(),
@@ -338,7 +340,7 @@ impl ChunkRenderer {
 					visibility: wgpu::ShaderStages::FRAGMENT,
 					ty: wgpu::BindingType::Texture {
 						multisampled: false,
-						view_dimension: wgpu::TextureViewDimension::D2,
+						view_dimension: wgpu::TextureViewDimension::D2Array,
 						sample_type: wgpu::TextureSampleType::Float { filterable: true }
 					},
 					count: None,
@@ -377,28 +379,51 @@ impl ChunkRenderer {
 		let block_wf_render_pipeline = create_block_pipeline(gfx, &block_pipeline_layout, &block_shader, wgpu::PolygonMode::Line, super::GameRenderer::DEPTH_FORMAT);
 		let outline_render_pipeline = create_outline_pipeline(gfx, &outline_pipeline_layout, &outline_shader, super::GameRenderer::DEPTH_FORMAT);
 
-		let texture = {
-			let bytes = image::load(std::io::BufReader::new(std::fs::File::open("data/textures/spritesheet.png").unwrap()), image::ImageFormat::Png).unwrap();
-			let rgba8 = bytes.to_rgba8();
-			let texture = gfx::Texture::create_binding_texture(
-				gfx,
-				wgpu::TextureFormat::Rgba8UnormSrgb,
-				wgpu::Extent3d {
-					width: rgba8.width(),
-					height: rgba8.height(),
-					depth_or_array_layers: 1,
-				}
-			);
-			gfx.queue.write_texture(
-				texture.texture.as_image_copy(),
-				&rgba8,
-				wgpu::ImageDataLayout {
-					offset: 0,
-					bytes_per_row: Some(4 * texture.size().width),
-					rows_per_image: Some(texture.size().height),
-				}, texture.size()
-			);
-			texture
+		let block_texture = gfx.device.create_texture(&wgpu::TextureDescriptor {
+			label: Some("Block Array Texture"),
+			dimension: wgpu::TextureDimension::D2,
+			format: wgpu::TextureFormat::Rgba8UnormSrgb,
+			mip_level_count: 1,
+			sample_count: 1,
+			size: wgpu::Extent3d {
+				width: block_textures.size.x,
+				height: block_textures.size.y,
+				depth_or_array_layers: block_textures.textures.len() as u32
+			},
+			usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+			view_formats: &[]
+		});
+
+		for (block, texture) in &block_textures.blocks {
+
+		}
+
+		let block_texture_view = block_texture.create_view(&wgpu::TextureViewDescriptor {
+			label: Some("Block Array Texture View"),
+			aspect: wgpu::TextureAspect::All,
+			array_layer_count: Some(block_texture.depth_or_array_layers()),
+			format: Some(block_texture.format()),
+			dimension: Some(wgpu::TextureViewDimension::D2Array),
+			base_mip_level: 0,
+			mip_level_count: None,
+			base_array_layer: 0
+		});
+
+		let block_texture = gfx::Texture {
+			texture: block_texture,
+			view: block_texture_view,
+			sampler: Some(gfx.device.create_sampler(&wgpu::SamplerDescriptor {
+				address_mode_u: wgpu::AddressMode::Repeat,
+				address_mode_v: wgpu::AddressMode::Repeat,
+				address_mode_w: wgpu::AddressMode::Repeat,
+				mag_filter: wgpu::FilterMode::Nearest,
+				min_filter: wgpu::FilterMode::Nearest,
+				mipmap_filter: wgpu::FilterMode::Nearest,
+				compare: None,
+				lod_min_clamp: 0.0,
+				lod_max_clamp: 0.0,
+				..Default::default()
+			})),
 		};
 
 		let texture_bind_group = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -407,11 +432,11 @@ impl ChunkRenderer {
 			entries: &[
 				wgpu::BindGroupEntry {
 					binding: 0,
-					resource: wgpu::BindingResource::TextureView(&texture.view),
+					resource: wgpu::BindingResource::TextureView(&block_texture.view),
 				},
 				wgpu::BindGroupEntry {
 					binding: 1,
-					resource: wgpu::BindingResource::Sampler(texture.sampler.as_ref().unwrap()),
+					resource: wgpu::BindingResource::Sampler(block_texture.sampler.as_ref().unwrap()),
 				}
 			]
 		});
@@ -456,7 +481,7 @@ impl ChunkRenderer {
 			block_render_pipeline,
 			block_wf_render_pipeline,
 			outline_render_pipeline,
-			texture,
+			texture: block_texture,
 			texture_bind_group,
 			world_uniforms_buffer,
 			uniform_bind_group,
@@ -484,6 +509,7 @@ impl ChunkRenderer {
 		self.world_uniforms.lighting_uniform_mut().sun_dir = dir.0;
 	}
 
+	#[allow(dead_code)]
 	pub fn sun_direction(&self) -> Vec4f32 {
 		Vector(self.world_uniforms.lighting_uniform().sun_dir)
 	}
@@ -509,7 +535,7 @@ impl<'a, 'b> ChunkRenderContext<'a, 'b> {
 		renderer: &'a super::GameRenderer,
 		render_pass: &'b mut wgpu::RenderPass<'a>
 	) -> ChunkRenderContext<'a, 'b> {
-		let mut ctx = ChunkRenderContext {
+		let ctx = ChunkRenderContext {
 			renderer,
 			render_pass
 		};

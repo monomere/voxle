@@ -103,6 +103,7 @@ impl<T: Scalar, const N: usize> Vector<T, N> {
 	{
 		self.map(|c| num::abs(c))
 	}
+
 	pub fn step<E: Into<Vector<T, N>>>(
 		self,
 		edge: E
@@ -113,6 +114,13 @@ impl<T: Scalar, const N: usize> Vector<T, N> {
 	{
 		let edge = edge.into();
 		self.zip_map(edge, |c, e| if c < e { T::zero() } else { T::one() })
+	}
+
+	pub fn sign(self) -> Self
+	where
+		T: num::Signed
+	{
+		self.map(|c| num::signum(c))
 	}
 }
 
@@ -224,9 +232,83 @@ macro_rules! impl_swizzles_2d_for_vec {
 	};
 }
 
+macro_rules! impl_swizzles_3d_for_vec {
+	(3, $n:literal) => {
+		impl_swizzle_for_vec!($n -> 3: xxx => x, x, x);
+		impl_swizzle_for_vec!($n -> 3: xxy => x, x, y);
+		impl_swizzle_for_vec!($n -> 3: xxz => x, x, z);
+		impl_swizzle_for_vec!($n -> 3: xyx => x, y, x);
+		impl_swizzle_for_vec!($n -> 3: xyy => x, y, y);
+		impl_swizzle_for_vec!($n -> 3: xyz => x, y, z);
+		impl_swizzle_for_vec!($n -> 3: xzx => x, z, x);
+		impl_swizzle_for_vec!($n -> 3: xzy => x, z, y);
+		impl_swizzle_for_vec!($n -> 3: xzz => x, z, z);
+		impl_swizzle_for_vec!($n -> 3: yxx => y, x, x);
+		impl_swizzle_for_vec!($n -> 3: yxy => y, x, y);
+		impl_swizzle_for_vec!($n -> 3: yxz => y, x, z);
+		impl_swizzle_for_vec!($n -> 3: yyx => y, y, x);
+		impl_swizzle_for_vec!($n -> 3: yyy => y, y, y);
+		impl_swizzle_for_vec!($n -> 3: yyz => y, y, z);
+		impl_swizzle_for_vec!($n -> 3: yzx => y, z, x);
+		impl_swizzle_for_vec!($n -> 3: yzy => y, z, y);
+		impl_swizzle_for_vec!($n -> 3: yzz => y, z, z);
+		impl_swizzle_for_vec!($n -> 3: zxx => z, x, x);
+		impl_swizzle_for_vec!($n -> 3: zxy => z, x, y);
+		impl_swizzle_for_vec!($n -> 3: zxz => z, x, z);
+		impl_swizzle_for_vec!($n -> 3: zyx => z, y, x);
+		impl_swizzle_for_vec!($n -> 3: zyy => z, y, y);
+		impl_swizzle_for_vec!($n -> 3: zyz => z, y, z);
+		impl_swizzle_for_vec!($n -> 3: zzx => z, z, x);
+		impl_swizzle_for_vec!($n -> 3: zzy => z, z, y);
+		impl_swizzle_for_vec!($n -> 3: zzz => z, z, z);
+	};
+	(4, $n:literal) => {
+		impl_swizzles_3d_for_vec!(3, $n);
+		impl_swizzle_for_vec!($n -> 3: xxw => x, x, w);
+		impl_swizzle_for_vec!($n -> 3: xyw => x, y, w);
+		impl_swizzle_for_vec!($n -> 3: xzw => x, z, w);
+		impl_swizzle_for_vec!($n -> 3: xwx => x, w, x);
+		impl_swizzle_for_vec!($n -> 3: xwy => x, w, y);
+		impl_swizzle_for_vec!($n -> 3: xwz => x, w, z);
+		impl_swizzle_for_vec!($n -> 3: xww => x, w, w);
+		impl_swizzle_for_vec!($n -> 3: yxw => y, x, w);
+		impl_swizzle_for_vec!($n -> 3: yyw => y, y, w);
+		impl_swizzle_for_vec!($n -> 3: yzw => y, z, w);
+		impl_swizzle_for_vec!($n -> 3: ywx => y, w, x);
+		impl_swizzle_for_vec!($n -> 3: ywy => y, w, y);
+		impl_swizzle_for_vec!($n -> 3: ywz => y, w, z);
+		impl_swizzle_for_vec!($n -> 3: yww => y, w, w);
+		impl_swizzle_for_vec!($n -> 3: zxw => z, x, w);
+		impl_swizzle_for_vec!($n -> 3: zyw => z, y, w);
+		impl_swizzle_for_vec!($n -> 3: zzw => z, z, w);
+		impl_swizzle_for_vec!($n -> 3: zwx => z, w, x);
+		impl_swizzle_for_vec!($n -> 3: zwy => z, w, y);
+		impl_swizzle_for_vec!($n -> 3: zwz => z, w, z);
+		impl_swizzle_for_vec!($n -> 3: zww => z, w, w);
+		impl_swizzle_for_vec!($n -> 3: wxx => w, x, x);
+		impl_swizzle_for_vec!($n -> 3: wxy => w, x, y);
+		impl_swizzle_for_vec!($n -> 3: wxz => w, x, z);
+		impl_swizzle_for_vec!($n -> 3: wxw => w, x, w);
+		impl_swizzle_for_vec!($n -> 3: wyx => w, y, x);
+		impl_swizzle_for_vec!($n -> 3: wyy => w, y, y);
+		impl_swizzle_for_vec!($n -> 3: wyz => w, y, z);
+		impl_swizzle_for_vec!($n -> 3: wyw => w, y, w);
+		impl_swizzle_for_vec!($n -> 3: wzx => w, z, x);
+		impl_swizzle_for_vec!($n -> 3: wzy => w, z, y);
+		impl_swizzle_for_vec!($n -> 3: wzz => w, z, z);
+		impl_swizzle_for_vec!($n -> 3: wzw => w, z, w);
+		impl_swizzle_for_vec!($n -> 3: wwx => w, w, x);
+		impl_swizzle_for_vec!($n -> 3: wwy => w, w, y);
+		impl_swizzle_for_vec!($n -> 3: wwz => w, w, z);
+		impl_swizzle_for_vec!($n -> 3: www => w, w, w);
+	};
+}
+
 impl_swizzles_2d_for_vec!(2, 2);
 impl_swizzles_2d_for_vec!(3, 3);
 impl_swizzles_2d_for_vec!(4, 4);
+impl_swizzles_3d_for_vec!(3, 3);
+impl_swizzles_3d_for_vec!(4, 4);
 
 impl<T: Scalar, const N: usize> From<T> for Vector<T, N> {
 	fn from(value: T) -> Self {
@@ -357,20 +439,54 @@ impl<T: Scalar + Display, const N: usize> std::fmt::Display for Vector<T, N> {
 	}
 }
 
-pub struct Rect<T: Scalar> {
+pub struct Rect<T: Scalar + Add<Output = T>> {
 	pub x: T,
 	pub y: T,
 	pub w: T,
 	pub h: T,
 }
 
-impl<T: Scalar> Rect<T> {
+impl<T: Scalar + Add<Output = T>> Rect<T> {
 	pub fn x1(&self) -> T { self.x }
 	pub fn y1(&self) -> T { self.y }
 
-	// TODO: return type to add output
-	pub fn x2(&self) -> T where T: Add<Output = T> { self.x + self.w }
-	pub fn y2(&self) -> T where T: Add<Output = T> { self.y + self.h }
+	pub fn x2(&self) -> T { self.x + self.w }
+	pub fn y2(&self) -> T { self.y + self.h }
+
+	pub fn xy1(&self) -> Vec2<T> { vec2(self.x1(), self.y1()) }
+	pub fn xy2(&self) -> Vec2<T> { vec2(self.x2(), self.y2()) }
+
+	pub fn map<U: Scalar + Add<Output = U>, F: Fn(T) -> U>(&self, f: F) -> Rect<U>
+	{
+		Rect {
+			x: f(self.x),
+			y: f(self.y),
+			w: f(self.w),
+			h: f(self.h),
+		}
+	}
+
+	pub fn each_as<U: Scalar + Add<Output = U>>(&self) -> Rect<U>
+	where T: AsPrimitive<U>
+	{
+		self.map(|c| c.as_())
+	}
+}
+
+impl<T: Scalar + Add<Output = T> + Div> Div<Vec2<T>> for Rect<T>
+where
+	<T as Div>::Output: Scalar + Add<Output = <T as Div>::Output>
+{
+	type Output = Rect<<T as Div>::Output>;
+
+	fn div(self, rhs: Vec2<T>) -> Self::Output {
+		Rect::<<T as Div>::Output> {
+			x: self.x / rhs.x,
+			y: self.y / rhs.y,
+			w: self.w / rhs.x,
+			h: self.h / rhs.y,
+		}
+	}
 }
 
 // TODO: matrix types

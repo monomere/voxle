@@ -1,6 +1,6 @@
 use crate::gfx::{self, graph};
 
-use self::chunk::ChunkRenderContext;
+use self::{chunk::ChunkRenderContext, ui::{UiRenderContext, UiBuilder}};
 
 pub mod chunk;
 pub mod ui;
@@ -47,37 +47,41 @@ pub struct GameRenderer {
 
 impl GameRenderer {
 	pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
+	pub const SAMPLES: u32 = 4;
+	pub const CLEAR_COLOR: wgpu::Color = wgpu::Color { r: 0.2, g: 0.3, b: 0.5, a: 1.0 };
 
-	pub fn new(gfx: &gfx::Gfx) -> Self {
+	pub fn new(gfx: &gfx::Gfx, block_textures: super::texture::LoadedTextures) -> Self {
 		let graph_spec = graph::GraphSpec::<super::GameState> {
 			attachments: &[
-				("output", graph::AttachmentSpec::Output(graph::OutputAttachmentSpec {
+				Some(("output", graph::AttachmentSpec::Output(graph::OutputAttachmentSpec {
 					ops: |_: &gfx::Gfx| wgpu::Operations {
-						load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+						load: wgpu::LoadOp::Clear(if Self::SAMPLES == 1 { Self::CLEAR_COLOR } else { wgpu::Color::BLACK }),
 						store: true
 					}
-				})),
-				("msaa-output", graph::AttachmentSpec::Color(graph::ColorAttachmentSpec {
-					format: gfx.config.format,
-					resolve: Some("output"),
-					samples: 4,
-					size: graph::AttachmentSizeSpec::Output(1.0),
-					ops: |_: &gfx::Gfx| wgpu::Operations {
-						load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.2, g: 0.3, b: 0.5, a: 1.0 }),
-						store: false // we can discard, since the unresolved output isn't needed.
-					},
-				})),
-				("depth", graph::AttachmentSpec::DepthStencil(graph::DepthStencilAttachmentSpec {
+				}))),
+				if Self::SAMPLES != 1 {
+					Some(("msaa-output", graph::AttachmentSpec::Color(graph::ColorAttachmentSpec {
+						format: gfx.config.format,
+						resolve: Some("output"),
+						samples: Self::SAMPLES,
+						size: graph::AttachmentSizeSpec::Output(1.0),
+						ops: |_: &gfx::Gfx| wgpu::Operations {
+							load: wgpu::LoadOp::Clear(Self::CLEAR_COLOR),
+							store: false // we can discard, since the unresolved output isn't needed.
+						},
+					})))
+				} else { None },
+				Some(("depth", graph::AttachmentSpec::DepthStencil(graph::DepthStencilAttachmentSpec {
 					format: Self::DEPTH_FORMAT,
 					depth_ops: Some(|_: &gfx::Gfx| Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: true })),
 					stencil_ops: None,
-					samples: 4 // TODO: allow user to sample count
-				})),
+					samples: Self::SAMPLES // TODO: allow user to sample count
+				}))),
 			],
 			nodes: &[
 				graph::NodeSpec {
 					id: "main",
-					color_attachments: &["msaa-output"],
+					color_attachments: &[if Self::SAMPLES == 1 { "output" } else { "msaa-output" }],
 					depth_stencil_attachment: Some("depth"),
 					render: |gfx, render_pass, game| {
 						game.renderer.render_main(gfx, render_pass, game);
@@ -87,7 +91,7 @@ impl GameRenderer {
 		};
 	
 		Self {
-			chunk_renderer: chunk::ChunkRenderer::new(gfx),
+			chunk_renderer: chunk::ChunkRenderer::new(gfx, block_textures),
 			ui_renderer: ui::UiRenderer::new(gfx),
 			graph: graph_spec.build(gfx),
 		}
@@ -101,8 +105,9 @@ impl GameRenderer {
 		game.on_render(gfx, &mut GameRenderContext { renderer: self, render_pass });
 	}
 
-	pub fn update(&mut self) {
-		self.chunk_renderer.update()
+	pub fn update(&mut self, gfx: &gfx::Gfx, ui_builder: UiBuilder) {
+		self.chunk_renderer.update();
+		self.ui_renderer.update(gfx, ui_builder);
 	}
 }
 
@@ -114,5 +119,9 @@ pub struct GameRenderContext<'a, 'b> {
 impl<'a, 'b> GameRenderContext<'a, 'b> {
 	pub fn begin_chunk_context<'ctx>(&'ctx mut self, gfx: &gfx::Gfx) -> ChunkRenderContext<'a, 'ctx> {
 		ChunkRenderContext::begin(gfx, self.renderer, self.render_pass)
+	}
+
+	pub fn begin_ui_context<'ctx>(&'ctx mut self, gfx: &gfx::Gfx) -> UiRenderContext<'a, 'ctx> {
+		UiRenderContext::begin(gfx, self.renderer, self.render_pass)
 	}
 }

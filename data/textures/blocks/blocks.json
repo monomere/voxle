@@ -1,0 +1,7 @@
+[
+	["stone", "stone.png"],
+	["grass", "grass.png", "dirt.png", "grass_side.png"],
+	["dirt", "dirt.png"],
+	["snow", "snow.png"],
+	["snow_grass", "snow.png", "dirt.png", "snow_grass_side.png"]
+]

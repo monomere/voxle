@@ -33,6 +33,7 @@ pub struct OutputAttachmentSpec {
 
 #[derive(Clone, Copy, Debug)]
 pub enum AttachmentSpec<Id> {
+	#[allow(dead_code)]
 	Color(ColorAttachmentSpec<Id>),
 	DepthStencil(DepthStencilAttachmentSpec),
 	Output(OutputAttachmentSpec)
@@ -47,7 +48,7 @@ pub struct NodeSpec<R: ?Sized, Id, Ids> {
 }
 
 pub struct GraphSpec<'a, R> {
-	pub attachments: &'a [(&'a str, AttachmentSpec<&'a str>)],
+	pub attachments: &'a [Option<(&'a str, AttachmentSpec<&'a str>)>],
 	pub nodes: &'a [NodeSpec<R, &'a str, &'a [&'a str]>]
 }
 
@@ -113,8 +114,8 @@ impl<'a, R> GraphSpec<'a, R> {
 		};
 
 		Graph {
-			attachments: self.attachments.into_iter().map(|(name, val)| 
-				(get_id(name), Attachment::create_from_spec(gfx, *val, &mut get_id))
+			attachments: self.attachments.into_iter().filter_map(|x| *x).map(|(name, val)| 
+				(get_id(name), Attachment::create_from_spec(gfx, val, &mut get_id))
 			).collect(),
 			passes: self.nodes.into_iter().map(|spec| NodeSpec {
 				id: get_id(spec.id),

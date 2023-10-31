@@ -34,8 +34,8 @@ fn create_pipeline(
 					// texcoord
 					wgpu::VertexAttribute {
 						format: wgpu::VertexFormat::Float32x2,
-						offset: 4 * 4,
-						shader_location: 2
+						offset: 4 * 2,
+						shader_location: 1
 					}
 				],
 			}]
@@ -46,7 +46,14 @@ fn create_pipeline(
 			targets: &[
 				Some(wgpu::ColorTargetState {
 					format: gfx.config.format,
-					blend: None,
+					blend: Some(wgpu::BlendState {
+						color: wgpu::BlendComponent {
+							src_factor: wgpu::BlendFactor::SrcAlpha,
+							dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+							operation: wgpu::BlendOperation::Add,
+						},
+						alpha: wgpu::BlendComponent::OVER
+					}),
 					write_mask: wgpu::ColorWrites::ALL
 				})
 			]
@@ -55,14 +62,20 @@ fn create_pipeline(
 			topology: wgpu::PrimitiveTopology::TriangleList,
 			strip_index_format: None,
 			front_face: wgpu::FrontFace::Cw,
-			cull_mode: Some(wgpu::Face::Back),
+			cull_mode: None,
 			unclipped_depth: false,
 			polygon_mode: wgpu::PolygonMode::Fill,
 			conservative: false
 		},
-		depth_stencil: None,
+		depth_stencil: Some(wgpu::DepthStencilState {
+			format: super::GameRenderer::DEPTH_FORMAT,
+			depth_write_enabled: false,
+			depth_compare: wgpu::CompareFunction::Always,
+			stencil: wgpu::StencilState::default(),
+			bias: wgpu::DepthBiasState::default(),
+		}),
 		multisample: wgpu::MultisampleState {
-			count: 1,
+			count: super::GameRenderer::SAMPLES,
 			mask: !0,
 			alpha_to_coverage_enabled: false
 		},
@@ -88,30 +101,60 @@ pub struct UiPrimitive {
 pub struct UiBuilder {
 	vertices: Vec<UiVertex>,
 	indices: Vec<u32>,
-	primitives: Vec<UiPrimitive>
+	primitives: Vec<UiPrimitive>,
+	screen_size: Vec2u32,
+	texture_size: Vec2u32,
 }
 
-
 impl UiBuilder {
+	pub fn new(screen_size: Vec2u32, texture_size: Vec2u32) -> Self {
+		Self {
+			vertices: vec![],
+			indices: vec![],
+			primitives: vec![],
+			screen_size,
+			texture_size
+		}
+	}
+
 	pub fn add_rect(
 		&mut self,
-		rect: Rect<f32>,
-		uvs: Rect<f32>,
+		rect: Rect<i32>,
+		uvs: Rect<i32>,
 	) {
 		let vertex_offset = self.vertices.len() as u32;
+		let rect = {
+			let mut r = rect;
+			r.x -= self.screen_size.x as i32 / 2;
+			r.y -= self.screen_size.y as i32 / 2;
+			r
+		}.each_as::<f32>() / self.screen_size.each_as();
+		let uvs = uvs.each_as::<f32>() / self.texture_size.each_as();
+
+		// note: uvs flipped on y
 		self.vertices.extend_from_slice(&[
-			UiVertex { position: [rect.x1(), rect.y1()], texcoord: [uvs.x1(), uvs.y1()] },
-			UiVertex { position: [rect.x2(), rect.y1()], texcoord: [uvs.x2(), uvs.y1()] },
-			UiVertex { position: [rect.x2(), rect.y2()], texcoord: [uvs.x2(), uvs.y2()] },
-			UiVertex { position: [rect.x1(), rect.y2()], texcoord: [uvs.x1(), uvs.y2()] },
+			UiVertex { position: [rect.x1(), rect.y1()], texcoord: [uvs.x1(), uvs.y2()] },
+			UiVertex { position: [rect.x2(), rect.y1()], texcoord: [uvs.x2(), uvs.y2()] },
+			UiVertex { position: [rect.x2(), rect.y2()], texcoord: [uvs.x2(), uvs.y1()] },
+			UiVertex { position: [rect.x1(), rect.y2()], texcoord: [uvs.x1(), uvs.y1()] },
 		]);
+
+		/*
+		    #0                #1
+			(x1,y1) --------- (x2,y1)
+			   | `-._            |
+				 |      `-._       |
+				 |           `-._  |
+			(x1,y2) --------- (x2,y2)
+		    #3                #2
+		*/
 
 		let index_offset = self.indices.len() as u32;
 		self.indices.extend_from_slice(&[
 			vertex_offset + 0,
 			vertex_offset + 1,
 			vertex_offset + 2,
-			vertex_offset + 1,
+			vertex_offset + 0,
 			vertex_offset + 2,
 			vertex_offset + 3,
 		]);
@@ -126,6 +169,7 @@ pub struct UiRenderer {
 	view_uniform_buffer: wgpu::Buffer,
 	texture: gfx::Texture,
 	mesh: gfx::Mesh<UiVertex>,
+	primitives: Vec<UiPrimitive>
 }
 
 impl UiRenderer {
@@ -144,7 +188,7 @@ impl UiRenderer {
 					},
 				},
 				wgpu::BindGroupLayoutEntry {
-        	binding: 0,
+        	binding: 1,
 					visibility: wgpu::ShaderStages::FRAGMENT,
 					ty: wgpu::BindingType::Texture {
 						multisampled: false,
@@ -154,7 +198,7 @@ impl UiRenderer {
 					count: None,
 				},
 				wgpu::BindGroupLayoutEntry {
-        	binding: 1,
+        	binding: 2,
 					visibility: wgpu::ShaderStages::FRAGMENT,
 					ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
 					count: None
@@ -172,7 +216,7 @@ impl UiRenderer {
 		let quad_render_pipeline = create_pipeline(gfx, &quad_pipeline_layout, &quad_shader);
 
 		let texture = {
-			let bytes = image::load(std::io::BufReader::new(std::fs::File::open("data/textures/spritesheet.png").unwrap()), image::ImageFormat::Png).unwrap();
+			let bytes = image::load(std::io::BufReader::new(std::fs::File::open("data/textures/ui_spritesheet.png").unwrap()), image::ImageFormat::Png).unwrap();
 			let rgba8 = bytes.to_rgba8();
 			let texture = gfx::Texture::create_binding_texture(
 				gfx,
@@ -225,16 +269,9 @@ impl UiRenderer {
 			texture,
 			uniform_bind_group,
 			view_uniform_buffer,
-			mesh: gfx::Mesh::new(gfx, &[], &[])
+			mesh: gfx::Mesh::new(gfx, &[], &[]),
+			primitives: vec![]
 		}
-	}
-
-	fn create_uniform_buffer(gfx: &gfx::Gfx, contents: &[u8]) -> wgpu::Buffer {
-		gfx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: None,
-			usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
-			contents
-		})
 	}
 
 	pub fn texture_size(&self) -> Vec2u32 {
@@ -242,8 +279,9 @@ impl UiRenderer {
 		vec2(size.width, size.height)
 	}
 
-	pub fn update(&mut self, gfx: &gfx::Gfx) {
-		// self.mesh.update(gfx, vertices, indices);
+	pub fn update(&mut self, gfx: &gfx::Gfx, builder: UiBuilder) {
+		self.mesh.update(gfx, &builder.vertices, &builder.indices);
+		self.primitives = builder.primitives;
 		gfx.queue.write_buffer(
 			&self.view_uniform_buffer,
 			0,
@@ -261,23 +299,23 @@ pub struct UiRenderContext<'a, 'b> {
 
 impl<'a, 'b> UiRenderContext<'a, 'b> {
 	pub(super) fn begin(
-		gfx: &gfx::Gfx,
+		_gfx: &gfx::Gfx,
 		renderer: &'a super::GameRenderer,
 		render_pass: &'b mut wgpu::RenderPass<'a>
 	) -> UiRenderContext<'a, 'b> {
-		let mut ctx = UiRenderContext {
+		Self {
 			renderer,
 			render_pass
-		};
-
-		ctx
+		}
 	}
 	
-	// TODO: states/game/renderer -> renderer?
-
-	pub fn render_quad(&mut self, chunk: &'a super::super::chunk::Chunk) {
-		if let Some(mesh) = &chunk.mesh {
-			mesh.render(self.render_pass)
+	pub fn render(&mut self) {
+		self.render_pass.set_pipeline(&self.renderer.ui_renderer.quad_render_pipeline);
+		self.render_pass.set_bind_group(0, &self.renderer.ui_renderer.uniform_bind_group, &[]);
+		self.render_pass.set_vertex_buffer(0, self.renderer.ui_renderer.mesh.buffers.vertex_buffer.slice(..));
+		self.render_pass.set_index_buffer(self.renderer.ui_renderer.mesh.buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+		for primitive in &self.renderer.ui_renderer.primitives {
+			self.render_pass.draw_indexed(primitive.offset..primitive.count, 0, 0..1);
 		}
 	}
 }

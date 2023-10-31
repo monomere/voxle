@@ -4,6 +4,7 @@
 //! Use `begin_frame()` and `end_frame()` to start drawing the egui UI.
 //! A basic usage example can be found [here](https://github.com/hasenbanck/egui_example).
 #![warn(missing_docs)]
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 

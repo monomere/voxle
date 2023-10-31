@@ -3,4 +3,4 @@ struct ViewUniform {
 }
 
 @group(0) @binding(0)
-var<uniform> ui_view: CameraUniform;
+var<uniform> ui_view: ViewUniform;

@@ -1,5 +1,6 @@
-use std::{collections::HashMap, hash::Hasher};
+#![allow(dead_code)]
 
+use std::{collections::HashMap, hash::Hasher};
 
 pub struct ScreenRect {
 	x: i32,
@@ -68,7 +69,7 @@ impl Font {
 		todo!()
 	}
 
-	pub fn char(&self, c: char) -> FontChar {
+	pub fn char(&self, _c: char) -> FontChar {
 		todo!()
 	}
 

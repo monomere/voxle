@@ -217,7 +217,7 @@ async fn run() {
 	
 	let mut gfx = Box::new(gfx::Gfx::new(Window {
 		input: Box::new(Input::new()),
-		window: WindowBuilder::new().build(&event_loop).unwrap(),
+		window: WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::new(1280, 720)).build(&event_loop).unwrap(),
 		capture_cursor: false
 	}).await);
 

@@ -12,6 +12,7 @@ struct Output {
 	@location(1) normal: vec3<f32>,
 	@location(2) color: vec3<f32>,
 	@location(3) texcoord: vec2<f32>,
+	@location(4) texture_id: u32,
 }
 
 @vertex
@@ -29,6 +30,7 @@ fn vs_main(in: Input) -> Output {
 
 	out.normal = faces[in.data >> 16u];
 	out.texcoord = in.texcoord;
+	out.texture_id = in.data >> 16u;
 
 	out.clip_position = world_camera.view_proj * vec4<f32>(in.position, 1.0);
 
@@ -36,7 +38,7 @@ fn vs_main(in: Input) -> Output {
 }
 
 @group(1) @binding(0)
-var in_texture: texture_2d<f32>;
+var in_texture: texture_2d_array<f32>;
 
 @group(1) @binding(1)
 var in_sampler: sampler;
@@ -50,6 +52,6 @@ var<push_constant> push_constants: PushConstants;
 @fragment
 fn fs_main(in: Output) -> @location(0) vec4<f32> {
 	var shadow = clamp(dot(-world_lighting.sun_direction.xyz, in.normal), 0.1, 1.0);
-	var color = textureSample(in_texture, in_sampler, in.texcoord);
+	var color = textureSample(in_texture, in_sampler, in.texcoord, in.texture_id);
 	return push_constants.color * color * shadow;
 }

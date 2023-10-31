@@ -3,7 +3,7 @@ use num_traits::FromPrimitive;
 
 use crate::{gfx, math::*};
 
-use super::{FaceDirection, CUBE_FACES, CUBE_VERTICES};
+use super::{Dir, CUBE_FACES, CUBE_VERTICES, texture::{BlockTextures, TextureId}};
 
 pub const CHUNK_SIZE: Vec3<usize> = Vector([32, 32, 32]);
 
@@ -12,6 +12,26 @@ static_assertions::const_assert!(CHUNK_SIZE.0[1].is_power_of_two());
 static_assertions::const_assert!(CHUNK_SIZE.0[2].is_power_of_two());
 
 pub const CHUNK_BLOCK_COUNT: usize = CHUNK_SIZE.0[0] * CHUNK_SIZE.0[1] * CHUNK_SIZE.0[2];
+
+/// world -> chunk position (in chunks)
+pub fn world_to_chunk(world: Vec3f32) -> Vec3i32 {
+	world.zip_map(CHUNK_SIZE, |world, chunk| num::integer::div_floor(world.round() as i32, chunk as i32))
+}
+
+/// world -> block position (in blocks)
+pub fn world_to_block_local(world: Vec3f32) -> Vec3i32 {
+	world.zip_map(CHUNK_SIZE, |world, chunk| num::integer::mod_floor(world.round() as i32, chunk as i32))
+}
+
+/// block global -> chunk position (in chunks)
+pub fn block_global_to_chunk(global: Vec3i32) -> Vec3i32 {
+	global.zip_map(CHUNK_SIZE, |global, chunk| num::integer::div_floor(global, chunk as i32))
+}
+
+/// block global -> block position (in blocks)
+pub fn block_global_to_block_local(global: Vec3i32) -> Vec3i32 {
+	global.zip_map(CHUNK_SIZE, |global, chunk| num::integer::mod_floor(global, chunk as i32))
+}
 
 #[derive(Clone, Copy)]
 #[repr(packed)]
@@ -28,59 +48,6 @@ pub enum BlockId {
 	DIRT = 3,
 }
 
-#[derive(Clone, Copy)]
-struct BlockTex(u32);
-
-impl BlockTex {
-	const SIZE: u32 = 16;
-
-	fn rect(self) -> Vec4u32 {
-		let p = self.0 * Self::SIZE;
-		vec4(
-			p, 16,
-			p + 16, 0
-		)
-	}
-
-	fn uvs(self, texture_size: Vec2u32) -> Vec4f32 {
-		self.rect().each_as::<f32>() / vec4(
-			texture_size.x as f32,
-			texture_size.y as f32,
-			texture_size.x as f32,
-			texture_size.y as f32,
-		)
-	}
-}
-
-struct BlockTextures {
-	top: BlockTex,
-	bottom: BlockTex,
-	left: BlockTex,
-	right: BlockTex,
-	front: BlockTex,
-	back: BlockTex,
-}
-
-impl BlockTextures {
-	fn same(t: BlockTex) -> Self {
-		Self { top: t, bottom: t, left: t, right: t, front: t, back: t }
-	}
-
-	fn cylinder(top: BlockTex, bottom: BlockTex, side: BlockTex) -> Self {
-		Self { top, bottom, left: side, right: side, front: side, back: side }
-	}
-
-	fn in_direction(&self, dir: FaceDirection) -> BlockTex {
-		match dir {
-			FaceDirection::PX => self.right,
-			FaceDirection::NX => self.left,
-			FaceDirection::PY => self.top,
-			FaceDirection::NY => self.bottom,
-			FaceDirection::PZ => self.front,
-			FaceDirection::NZ => self.back,
-		}
-	}
-}
 
 impl BlockId {
 	fn is_solid(self) -> bool {
@@ -95,9 +62,9 @@ impl BlockId {
 	fn textures(self) -> Option<BlockTextures> {
 		match self {
     	BlockId::AIR => None,
-			BlockId::STONE => Some(BlockTextures::same(BlockTex(3))),
-			BlockId::GRASS => Some(BlockTextures::cylinder(BlockTex(1), BlockTex(2), BlockTex(0))),
-			BlockId::DIRT => Some(BlockTextures::same(BlockTex(2))),
+			BlockId::STONE => Some(BlockTextures::same(TextureId(3))),
+			BlockId::GRASS => Some(BlockTextures::cylinder(TextureId(1), TextureId(2), TextureId(0))),
+			BlockId::DIRT => Some(BlockTextures::same(TextureId(2))),
 		}
 	}
 }
@@ -185,9 +152,9 @@ impl ChunkData {
 					let block = self.blocks[offset];
 
 					let block_position =
-						chunk_position.map(|c| c as f32) *
-						CHUNK_SIZE.map(|c| c as f32) +
-						Vector([x, y, z]).map(|c| c as f32);
+						chunk_position.each_as::<f32>() *
+						CHUNK_SIZE.each_as() +
+						Vector([x, y, z]).each_as();
 
 					if block.id == 0 {
 						continue; // don't render air.
@@ -221,15 +188,17 @@ impl ChunkData {
 
 						let start_index = vertices.len() as u32;
 
-						let face_uvs = [
-							vec2(1.0, 1.0),
-							vec2(0.0, 1.0),
-							vec2(0.0, 0.0),
-							vec2(1.0, 0.0),
-						];
-
-						let make_uvs = |i: usize, uvs: Vec4f32| {
-							face_uvs[i] * uvs.xy() + (vec2(1.0, 1.0) - face_uvs[i]) * uvs.zw()
+						let make_uvs = |i: usize, uvs: Rect<f32>| {
+							[
+								vec2(0.0, 1.0),
+								vec2(1.0, 1.0),
+								vec2(1.0, 0.0),
+								vec2(0.0, 0.0),
+								// vec2(uvs.x1(), uvs.h - uvs.y1()),
+								// vec2(uvs.x2(), uvs.h - uvs.y1()),
+								// vec2(uvs.x2(), uvs.h - uvs.y2()),
+								// vec2(uvs.x1(), uvs.h - uvs.y2()),
+							][i]
 						};
 	
 						for (index_index, index) in face_vertices.into_iter().enumerate() {
@@ -238,9 +207,10 @@ impl ChunkData {
 								position: (vertex + block_position).0,
 								texcoord: make_uvs(
 									index_index,
-									BlockId::from_u16(block.id)
-										.and_then(|id| id.textures().map(|tex| tex.in_direction(direction).uvs(texture_size)))
-										.unwrap_or(vec4(0.0, 0.0, 0.0, 0.0))
+									Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 }
+									// BlockId::from_u16(block.id)
+									// 	.and_then(|id| id.textures().map(|tex| tex.in_direction(direction).uvs(texture_size)))
+									// 	.unwrap_or()
 								).0,
 								data: block.id as u32 | (direction as u32) << 16, // TODO: check if in cave (for shading)
 							});

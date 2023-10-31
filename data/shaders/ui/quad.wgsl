@@ -7,23 +7,25 @@ struct Input {
 
 struct Output {
 	@builtin(position) clip_position: vec4<f32>,
+	@location(0) texcoord: vec2<f32>
 }
 
 @vertex
 fn vs_main(in: Input) -> Output {
 	var out: Output;
-	out.clip_position = ui_view.proj * vec4<f32>(push_constants.position + in.position, 1.0);
+	out.clip_position = vec4<f32>(in.position, 0.0, 1.0);
+	out.texcoord = in.texcoord;
 	return out;
 }
 
-@group(1) @binding(0)
+@group(0) @binding(1)
 var in_texture: texture_2d<f32>;
 
-@group(1) @binding(1)
+@group(0) @binding(2)
 var in_sampler: sampler;
 
 @fragment
 fn fs_main(in: Output) -> @location(0) vec4<f32> {
-	return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+	return textureSample(in_texture, in_sampler, in.texcoord);
 }
 

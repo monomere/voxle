@@ -36,7 +36,7 @@ impl CameraController {
 		self.capturing = true;
 	}
 
-	pub fn update_camera(&mut self, ctx: &mut UpdateContext, camera: &mut renderer::chunk::Camera, dt: f32) {
+	pub fn update_camera(&mut self, ctx: &mut UpdateContext, camera: &mut renderer::chunk::Camera, dt: f32) -> bool {
 		let delta = {
 			let mut res = glm::vec3(0.0, 0.0, 0.0);
 			if ctx.input().key(KeyCode::KeyD).held() { res.x += 1.0; }
@@ -75,6 +75,8 @@ impl CameraController {
 		if ctx.input().key(KeyCode::KeyN).just_pressed() {
 			self.smooth = !self.smooth;
 		}
+
+		let last_capturing = self.capturing;
 
 		if self.capturing && ctx.window().input().key(KeyCode::Escape).just_pressed() {
 			ctx.window_mut().capture_cursor(false);
@@ -137,5 +139,7 @@ impl CameraController {
 	
 			camera.pitch = camera.pitch.clamp(-safe_angle, safe_angle);
 		}
+
+		last_capturing
 	}
 }

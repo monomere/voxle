@@ -1,24 +1,24 @@
 use std::collections::{HashMap, HashSet};
-use noise::NoiseFn;
 use winit::keyboard::KeyCode;
 use crate::{state::State, gfx, UpdateContext, math::*};
 
-use self::{renderer::GameRenderContext, chunk::Block};
+use self::{renderer::{GameRenderContext, ui::UiBuilder}, chunk::Block};
 
 mod chunk;
 mod renderer;
 mod camera;
-
+mod worldgen;
+mod texture;
 
 #[derive(Debug, Clone, Copy)]
-pub enum FaceDirection {
+pub enum Dir {
 	PX = 0, NX = 1,
 	PY = 2, NY = 3,
 	PZ = 4, NZ = 5,
 }
 
-impl FaceDirection {
-	pub const fn all() -> &'static [FaceDirection; FaceDirection::count()] {
+impl Dir {
+	pub const fn all() -> &'static [Dir; Dir::count()] {
 		&[Self::PX, Self::NX, Self::PY, Self::NY, Self::PZ, Self::NZ]
 	}
 
@@ -65,108 +65,14 @@ pub const CUBE_VERTICES: [[f32; 3]; 8] = [
 	[-0.5, -0.5,  0.5], // 7
 ];
 
-pub const CUBE_FACES: [(FaceDirection, [usize; 4]); 6] = [
-	(FaceDirection::PX, [5, 4, 0, 1]),
-	(FaceDirection::NX, [7, 6, 2, 3]),
-	(FaceDirection::PY, [3, 2, 1, 0]),
-	(FaceDirection::NY, [4, 5, 6, 7]),
-	(FaceDirection::PZ, [4, 7, 3, 0]),
-	(FaceDirection::NZ, [6, 5, 1, 2]),
+pub const CUBE_FACES: [(Dir, [usize; 4]); 6] = [
+	(Dir::PX, [5, 4, 0, 1]),
+	(Dir::NX, [7, 6, 2, 3]),
+	(Dir::PY, [3, 2, 1, 0]),
+	(Dir::NY, [4, 5, 6, 7]),
+	(Dir::PZ, [4, 7, 3, 0]),
+	(Dir::NZ, [6, 5, 1, 2]),
 ];
-struct WorldGen {
-	noise: noise::Perlin // noise::Fbm<noise::Perlin>
-}
-
-impl WorldGen {
-	fn new(seed: u32) -> Self {
-		Self {
-			noise: noise::Perlin::new(seed)
-		}
-	}
-
-	fn get_height_at(&self, pos: Vec2i32) -> i32 {
-		((self.noise.get((pos.each_as::<f64>() * 0.01).0) * 2.0 - 1.0) * chunk::CHUNK_SIZE.y as f64) as i32
-	}
-
-	fn fill_chunk(chunk: &mut chunk::Chunk, block: chunk::Block) {
-		for y in 0..chunk::CHUNK_SIZE.y as i32 {
-			for z in 0..chunk::CHUNK_SIZE.z as i32 {
-				for x in 0..chunk::CHUNK_SIZE.x as i32 {
-					chunk.data.set_block(vec3(x, y, z), block);
-				}
-			}
-		}
-	}
-
-	fn grass_dirt_stone(y: i32, top_y: i32) -> u16 {
-		if y == top_y {
-			chunk::BlockId::GRASS as u16
-		} else if top_y - y < 5 {
-			chunk::BlockId::DIRT as u16
-		} else {
-			chunk::BlockId::STONE as u16
-		}
-	}
-
-	fn generate_chunk(&self, chunk_pos: Vec3i32) -> Option<chunk::Chunk> {
-		let mut chunk = chunk::Chunk::new(chunk_pos, chunk::ChunkData::new());
-		let chunk_pos_block = chunk_pos * chunk::CHUNK_SIZE.each_as::<i32>();
-
-		if chunk_pos.y < -1 && chunk_pos.y > -4 {
-			for y in 0..chunk::CHUNK_SIZE.y as i32 {
-				for z in 0..chunk::CHUNK_SIZE.z as i32 {
-					for x in 0..chunk::CHUNK_SIZE.x as i32 {
-						chunk.data.set_block(vec3(x, y, z), chunk::Block {
-							id: if chunk_pos.y == -2 {
-								Self::grass_dirt_stone(y, chunk::CHUNK_SIZE.y as i32)
-							} else {
-								chunk::BlockId::STONE as u16
-							},
-							state: 0
-						});
-					}
-				}
-			}
-			return Some(chunk);
-		}
-
-		for z in 0..chunk::CHUNK_SIZE.z as i32 {
-			for x in 0..chunk::CHUNK_SIZE.x as i32 {
-				let abs_y = self.get_height_at(chunk_pos_block.xz() + vec2(x, z));
-
-				let (chunk_y, loc_y) = num::integer::div_mod_floor(abs_y, chunk::CHUNK_SIZE.y as i32);
-
-				// check if we're in our chunk.
-				if chunk_y >= chunk_pos.y {
-					let (loc_y, top_y) = if chunk_y > chunk_pos.y {
-						(chunk::CHUNK_SIZE.y as i32 - 1, -1)
-					} else {
-						(loc_y.abs(), loc_y.abs())
-					};
-
-					for y in 0..=loc_y {
-						chunk.data.set_block(vec3(x, y, z), chunk::Block {
-							id: Self::grass_dirt_stone(y, top_y),
-							state: 0
-						});
-					}
-				}
-			}	
-		}
-
-		Some(chunk)
-	}
-}
-
-/// world -> chunk position (in chunks)
-pub fn world_to_map(world: Vec3f32) -> Vec3i32 {
-	world.zip_map(chunk::CHUNK_SIZE, |world, chunk| num::integer::div_floor(world.round() as i32, chunk as i32))
-}
-
-/// world -> block position (in blocks)
-pub fn world_to_chunk_local(world: Vec3f32) -> Vec3i32 {
-	world.zip_map(chunk::CHUNK_SIZE, |world, chunk| num::integer::mod_floor(world.round() as i32, chunk as i32))
-}
 
 #[derive(Debug, Clone, Copy)]
 struct BlockTarget {
@@ -174,7 +80,7 @@ struct BlockTarget {
 	chunk: Vec3i32,
 	// block position local to chunk
 	block: Vec3i32,
-	face: Vec3f32
+	face: Dir
 }
 
 impl BlockTarget {
@@ -191,29 +97,31 @@ pub struct GameState {
 	render_distance: i32,
 	current_chunk_position: Vec3i32,
 	render_wireframe: bool,
-	worldgen: WorldGen,
-	target_block_position: Option<BlockTarget>,
+	worldgen: worldgen::WorldGen,
+	target_block: Option<BlockTarget>,
 }
 
 impl GameState {
 	pub fn new(gfx: &gfx::Gfx) -> Self {
 		let _world = shipyard::World::new();
 		
+		let block_textures = texture::load_block_textures("data/textures/blocks/blocks.json").unwrap();
+
 		Self {
 			_world,
 			chunks: HashMap::new(),
-			renderer: renderer::GameRenderer::new(gfx),
+			renderer: renderer::GameRenderer::new(gfx, block_textures),
 			camera_controller: camera::CameraController::new(10.0, 1.0),
 			render_distance: 8,
 			current_chunk_position: (0, 0, 0).vector(),
 			render_wireframe: false,
-			worldgen: WorldGen::new(69),
-			target_block_position: None,
+			worldgen: worldgen::WorldGen::new(69),
+			target_block: None,
 		}
 	}
 
 	fn update_chunk_quick(&mut self, gfx: &gfx::Gfx, pos: Vec3i32) {
-		let neighbors = FaceDirection::all().clone().map(|dir| {
+		let neighbors = Dir::all().clone().map(|dir| {
 			let normal = dir.normal::<i32>();
 			self.chunks.get(&(pos + normal)).and_then(|c| Some(chunk::UnsafeChunkDataRef::new(&*c.data)))
 		});
@@ -228,7 +136,7 @@ impl GameState {
 	fn update_chunk(&mut self, gfx: &gfx::Gfx, pos: Vec3i32) {
 		self.update_chunk_quick(gfx, pos);
 
-		let to_update: Vec<Vec3i32> = FaceDirection::all().iter().filter_map(|dir| {
+		let to_update: Vec<Vec3i32> = Dir::all().iter().filter_map(|dir| {
 			let normal = dir.normal::<i32>();
 			self.chunks.contains_key(&(pos + normal)).then_some(pos + normal)
 		}).collect();
@@ -258,7 +166,7 @@ impl GameState {
 								to_be_updated.insert(abs_pos);
 
 								// update neighbor meshes
-								for dir in FaceDirection::all() {
+								for dir in Dir::all() {
 									let normal = dir.normal::<i32>();
 									let abs_pos = abs_pos + normal;
 									if self.chunks.contains_key(&abs_pos) {
@@ -300,21 +208,30 @@ impl GameState {
 		let mut found = false;
 		let one_over_dir = dir.map(|c| 1.0 / c);
 		while len < 16.0 {
-			let chunk_position = world_to_map(ray);
-			let block_position = world_to_chunk_local(ray);
+			let chunk_position = chunk::world_to_chunk(ray);
+			let block_position = chunk::world_to_block_local(ray);
 			if let Some(chunk) = &self.chunks.get(&chunk_position) {
 				if chunk.data.get_block(block_position).is_some_and(|b| b.is_solid()) {
 					// https://www.shadertoy.com/view/ld23DV (Inigo Quilez)
-					let ro = (ray - dir * step) - chunk.position.each_as() - block_position.each_as();
+					let ro = (ray - dir * step) - block_position.each_as() - chunk.position.each_as::<f32>() * chunk::CHUNK_SIZE.each_as();
 					let n = one_over_dir * ro;
 					let k = one_over_dir.abs() * 0.5;
 					let t1 = -n - k;
-					let t_n = t1.x.max(t1.y).max(t1.z);
-					let normal = t1.step(t_n);
-					self.target_block_position = Some(BlockTarget {
+					let normal = -dir.sign() * t1.step(t1.yzx()) * t1.step(t1.zxy());
+					self.target_block = Some(BlockTarget {
 						chunk: chunk_position,
 						block: block_position,
-						face: normal
+						// possible optimization: store Vec3i32 so that
+						// we don't have to recompute the normal vector
+						face: match normal.each_as::<i32>().0 {
+							[ 1,  0,  0] => Dir::PX,
+							[-1,  0,  0] => Dir::NX,
+							[ 0,  1,  0] => Dir::PY,
+							[ 0, -1,  0] => Dir::NY,
+							[ 0,  0,  1] => Dir::PZ,
+							[ 0,  0, -1] => Dir::NZ,
+							_ => panic!("bad normal")
+						}
 					});
 					found = true;
 					break;
@@ -324,7 +241,7 @@ impl GameState {
 			ray += dir * step;
 		}
 		if !found {
-			self.target_block_position = None;
+			self.target_block = None;
 		}
 	}
 }
@@ -337,38 +254,88 @@ impl State for GameState {
 	}
 
 	fn update(&mut self, context: &mut UpdateContext) {
-		self.camera_controller.update_camera(context, &mut self.renderer.chunk_renderer.camera, context.dt);
+		let allow_input = self.camera_controller.update_camera(context, &mut self.renderer.chunk_renderer.camera, context.dt);
 		
 		let last_chunk_position = self.current_chunk_position;
 
-		self.current_chunk_position = world_to_map(self.renderer.chunk_renderer.camera.position);
+		self.current_chunk_position = chunk::world_to_chunk(self.renderer.chunk_renderer.camera.position);
 
 		if last_chunk_position != self.current_chunk_position {
 			self.generate_chunks(context.gfx);
 		}
 
-		if context.input().key(KeyCode::KeyG).just_pressed() {
-			self.render_wireframe = !self.render_wireframe;
-		}
+		if allow_input {
+			if context.input().key(KeyCode::KeyG).just_pressed() {
+				self.render_wireframe = !self.render_wireframe;
+			}
 
-		for (id, keycode) in [KeyCode::Digit0, KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3].into_iter().enumerate() {
-			if context.input().key(keycode).just_pressed() {
-				let loc_block_pos = world_to_chunk_local(self.renderer.chunk_renderer.camera.position);
+			for (id, keycode) in [KeyCode::Digit0, KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3].into_iter().enumerate() {
+				if context.input().key(keycode).just_pressed() {
+					let loc_block_pos = chunk::world_to_block_local(self.renderer.chunk_renderer.camera.position);
 
-				{
-					let chunk = self.chunks.get_mut(&self.current_chunk_position).unwrap();
-					chunk.data.set_block(loc_block_pos, Block {
-						id: id as u16,
-						state: 0
-					});
+					{
+						let chunk = self.chunks.get_mut(&self.current_chunk_position).unwrap();
+						chunk.data.set_block(loc_block_pos, Block {
+							id: id as u16,
+							state: 0
+						});
+					}
+
+					self.update_chunk(&context.gfx, self.current_chunk_position);
 				}
+			}
 
-				self.update_chunk(&context.gfx, self.current_chunk_position);
+			self.raycast_target();
+
+			if context.input().button(0).just_pressed() {
+				if let Some(target_block) = self.target_block {
+					if let Some(chunk) = self.chunks.get_mut(&target_block.chunk) {
+						chunk.data.set_block(target_block.block, Block {
+							id: 0,
+							state: 0
+						});
+					}
+					self.update_chunk(&context.gfx, target_block.chunk);
+				}
+			}
+
+			if context.input().button(1).just_pressed() {
+				if let Some(target_block) = self.target_block {
+					let global_block_pos = target_block.to_global() + target_block.face.normal();
+					let chunk_pos = chunk::block_global_to_chunk(global_block_pos);
+					let block_pos = chunk::block_global_to_block_local(global_block_pos);
+					if let Some(chunk) = self.chunks.get_mut(&chunk_pos) {
+						chunk.data.set_block(block_pos, Block {
+							id: 1,
+							state: 0
+						});
+					}
+					self.update_chunk(&context.gfx, chunk_pos);
+				}
 			}
 		}
 
-		self.raycast_target();
-		self.renderer.update();
+		let screen_width = context.gfx.config.width as i32;
+		let screen_height = context.gfx.config.height as i32;
+		let mut ui_builder = UiBuilder::new(
+			vec2(screen_width, screen_height).each_as(),
+			self.renderer.ui_renderer.texture_size()
+		);
+		{
+			ui_builder.add_rect(Rect {
+				x: (screen_width - 17) / 2,
+				y: (screen_height - 17) / 2,
+				w: 17,
+				h: 17,
+			}, Rect {
+				x: 0,
+				y: 0,
+				w: 16,
+				h: 16,
+			});
+		}
+
+		self.renderer.update(&context.gfx, ui_builder);
 	}
 	
 	fn render<'a>(&'a self, context: &mut gfx::RenderContext<'a>) {
@@ -380,13 +347,13 @@ impl State for GameState {
 			ui.label(format!("chunk: {}", self.current_chunk_position));
 			ui.label(format!("eye: {}", self.renderer.chunk_renderer.camera.position));
 			
-			let loc_block_pos = world_to_chunk_local(self.renderer.chunk_renderer.camera.position);
+			let loc_block_pos = chunk::world_to_block_local(self.renderer.chunk_renderer.camera.position);
 
 			let block = self.chunks[&self.current_chunk_position].data.get_block(loc_block_pos);
 
 			ui.label(format!("block: {:?}", block.map(|b| b.id)));
 			ui.label(format!("   at: {:?}", loc_block_pos));
-			ui.label(format!("target: {:?}", self.target_block_position));
+			ui.label(format!("target: {:?}", self.target_block));
 		});
 	}
 }
@@ -412,9 +379,14 @@ impl GameState {
 				self.render_chunks(&mut chunk_ctx);
 			}
 
-			if let Some(position) = self.target_block_position {
+			if let Some(position) = self.target_block {
 				chunk_ctx.render_outline(position.to_global().each_as())
 			}
+		}
+
+		{
+			let mut ui_ctx = ctx.begin_ui_context(gfx);
+			ui_ctx.render();
 		}
 	}
 }
