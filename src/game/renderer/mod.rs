@@ -50,7 +50,7 @@ impl GameRenderer {
 	pub const SAMPLES: u32 = 4;
 	pub const CLEAR_COLOR: wgpu::Color = wgpu::Color { r: 0.2, g: 0.3, b: 0.5, a: 1.0 };
 
-	pub fn new(gfx: &gfx::Gfx, block_textures: super::texture::LoadedTextures) -> Self {
+	pub fn new(gfx: &gfx::Gfx, block_textures: &super::texture::LoadedTextures) -> Self {
 		let graph_spec = graph::GraphSpec::<super::GameState> {
 			attachments: &[
 				Some(("output", graph::AttachmentSpec::Output(graph::OutputAttachmentSpec {

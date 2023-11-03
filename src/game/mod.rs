@@ -99,6 +99,7 @@ pub struct GameState {
 	render_wireframe: bool,
 	worldgen: worldgen::WorldGen,
 	target_block: Option<BlockTarget>,
+	block_textures: texture::LoadedTextures
 }
 
 impl GameState {
@@ -106,11 +107,13 @@ impl GameState {
 		let _world = shipyard::World::new();
 		
 		let block_textures = texture::load_block_textures("data/textures/blocks/blocks.json").unwrap();
+		let renderer = renderer::GameRenderer::new(gfx, &block_textures);
 
 		Self {
 			_world,
 			chunks: HashMap::new(),
-			renderer: renderer::GameRenderer::new(gfx, block_textures),
+			block_textures,
+			renderer,
 			camera_controller: camera::CameraController::new(10.0, 1.0),
 			render_distance: 8,
 			current_chunk_position: (0, 0, 0).vector(),
@@ -129,7 +132,7 @@ impl GameState {
 		self.chunks.get_mut(&pos).unwrap().update_mesh(
 			gfx,
 			&neighbors,
-			self.renderer.chunk_renderer.texture_size()
+			&self.block_textures
 		);
 	}
 

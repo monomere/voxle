@@ -13,7 +13,6 @@ pub struct OutlineVertex {
 pub struct BlockVertex {
 	pub position: [f32; 3],
 	pub data: u32,
-	pub texcoord: [f32; 2],
 }
 
 #[repr(C)]
@@ -57,12 +56,12 @@ fn create_block_pipeline(
 						offset: 3 * 4,
 						shader_location: 1
 					},
-					// texcoord
-					wgpu::VertexAttribute {
-						format: wgpu::VertexFormat::Float32x2,
-						offset: 4 * 4,
-						shader_location: 2
-					}
+					// // texcoord
+					// wgpu::VertexAttribute {
+					// 	format: wgpu::VertexFormat::Float32x2,
+					// 	offset: 4 * 4,
+					// 	shader_location: 2
+					// }
 				],
 			}]
 		},
@@ -295,7 +294,7 @@ impl ChunkRenderer {
 		WorldUniforms::new(gfx.device.limits().min_uniform_buffer_offset_alignment as usize)
 	}
 
-	pub fn new(gfx: &gfx::Gfx, block_textures: texture::LoadedTextures) -> Self {
+	pub fn new(gfx: &gfx::Gfx, block_textures: &texture::LoadedTextures) -> Self {
 		let camera = Camera {
 			position: Vector([0.0, 0.5, -2.0]),
 			yaw: 3.0 * glm::quarter_pi::<f32>(),
@@ -394,8 +393,32 @@ impl ChunkRenderer {
 			view_formats: &[]
 		});
 
-		for (block, texture) in &block_textures.blocks {
-
+		for texture_source in &block_textures.textures {
+			if let Some(ref texture_data) = &texture_source.data {
+				gfx.queue.write_texture(
+					wgpu::ImageCopyTexture {
+						aspect: wgpu::TextureAspect::All,
+						mip_level: 0,
+						origin: wgpu::Origin3d {
+							x: 0,
+							y: 0,
+							z: texture_source.id.0
+						},
+						texture: &block_texture
+					},
+					&texture_data,
+					wgpu::ImageDataLayout {
+						offset: 0,
+						bytes_per_row: Some(block_texture.width() * 4),
+						rows_per_image: Some(block_texture.height())
+					},
+					wgpu::Extent3d {
+						width: block_texture.width(),
+						height: block_texture.height(),
+						depth_or_array_layers: 1
+					}
+				);
+			}
 		}
 
 		let block_texture_view = block_texture.create_view(&wgpu::TextureViewDescriptor {

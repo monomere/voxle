@@ -175,6 +175,10 @@ impl Window {
 	}
 
 	pub fn capture_cursor(&mut self, capture: bool) {
+		if self.capture_cursor == capture {
+			return;
+		}
+
 		self.window.set_cursor_visible(!capture);
 
 		if capture {

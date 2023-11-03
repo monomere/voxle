@@ -3,7 +3,6 @@
 struct Input {
 	@location(0) position: vec3<f32>,
 	@location(1) data: u32,
-	@location(2) texcoord: vec2<f32>,
 	@builtin(vertex_index) vertex_index: u32,
 }
 
@@ -19,7 +18,8 @@ struct Output {
 fn vs_main(in: Input) -> Output {
 	var out: Output;
 
-	var faces: array<vec3<f32>, 6> = array<vec3<f32>, 6>(
+	// matches enum crate::game::Dir
+	var normals = array<vec3<f32>, 6>(
 		vec3<f32>( 1.0,  0.0,  0.0),
 		vec3<f32>(-1.0,  0.0,  0.0),
 		vec3<f32>( 0.0,  1.0,  0.0),
@@ -28,9 +28,28 @@ fn vs_main(in: Input) -> Output {
 		vec3<f32>( 0.0,  0.0, -1.0),
 	);
 
-	out.normal = faces[in.data >> 16u];
-	out.texcoord = in.texcoord;
-	out.texture_id = in.data >> 16u;
+	var uvs = array<vec2<f32>, 4>(
+		vec2<f32>(0.0, 1.0),
+		vec2<f32>(1.0, 1.0),
+		vec2<f32>(1.0, 0.0),
+		vec2<f32>(0.0, 0.0),
+	);
+
+	// DATA
+	// normal: 3 bits
+	// uv: 2 bits
+	// texid: 32 - 3 - 2 = 27 bits
+	// an 8K screen has about 2^25 pixels.
+	// 4x more texture ids than visible pixels on an 8K screen.
+	// just to be sure.
+
+	let normal_idx = (in.data >> 0u) & 7u; // 7 = 111b
+	let uv_idx = (in.data >> 3u) & 3u; // 3 = 11b
+	let tex_id = in.data >> 5u; // the rest
+
+	out.normal = normals[normal_idx];
+	out.texcoord = uvs[uv_idx];
+	out.texture_id = tex_id;
 
 	out.clip_position = world_camera.view_proj * vec4<f32>(in.position, 1.0);
 
@@ -53,5 +72,6 @@ var<push_constant> push_constants: PushConstants;
 fn fs_main(in: Output) -> @location(0) vec4<f32> {
 	var shadow = clamp(dot(-world_lighting.sun_direction.xyz, in.normal), 0.1, 1.0);
 	var color = textureSample(in_texture, in_sampler, in.texcoord, in.texture_id);
+	// var color = vec4<f32>(in.texcoord, 1.0, 1.0);
 	return push_constants.color * color * shadow;
 }

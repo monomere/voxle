@@ -31,11 +31,11 @@ impl WorldGen {
 
 	fn grass_dirt_stone(y: i32, top_y: i32) -> u16 {
 		if y == top_y {
-			chunk::BlockId::GRASS as u16
+			chunk::BlockId::Grass as u16
 		} else if top_y - y < 5 {
-			chunk::BlockId::DIRT as u16
+			chunk::BlockId::Dirt as u16
 		} else {
-			chunk::BlockId::STONE as u16
+			chunk::BlockId::Stone as u16
 		}
 	}
 
@@ -51,7 +51,7 @@ impl WorldGen {
 							id: if chunk_pos.y == -2 {
 								Self::grass_dirt_stone(y, chunk::CHUNK_SIZE.y as i32 - 1)
 							} else {
-								chunk::BlockId::STONE as u16
+								chunk::BlockId::Stone as u16
 							},
 							state: 0
 						});

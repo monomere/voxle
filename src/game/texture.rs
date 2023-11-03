@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::math::{Rect, Vec2u32, vec2};
 
-use super::Dir;
+use super::{Dir, chunk::BlockId};
 
 #[derive(Clone, Copy)]
 pub struct TextureId(pub u32);
@@ -22,12 +22,12 @@ impl TextureId {
 }
 
 pub struct BlockSides<T: Copy + Clone> {
-	top: T,
-	bottom: T,
-	left: T,
-	right: T,
-	front: T,
-	back: T,
+	pub top: T,
+	pub bottom: T,
+	pub left: T,
+	pub right: T,
+	pub front: T,
+	pub back: T,
 }
 
 impl<T: Copy + Clone> BlockSides<T> {
@@ -37,6 +37,10 @@ impl<T: Copy + Clone> BlockSides<T> {
 
 	pub fn cylinder(top: T, bottom: T, side: T) -> Self {
 		Self { top, bottom, left: side, right: side, front: side, back: side }
+	}
+
+	pub fn all(&self) -> [T; 6] {
+		[self.top, self.bottom, self.left, self.right, self.front, self.back]
 	}
 
 	pub fn in_direction(&self, dir: Dir) -> T {
@@ -59,14 +63,14 @@ pub struct TextureSource {
 }
 
 pub struct LoadedTextures {
-	pub blocks: Vec<(String, BlockTextures)>,
+	pub blocks: HashMap<BlockId, BlockTextures>,
 	pub textures: Vec<TextureSource>,
 	pub size: Vec2u32
 }
 
 pub fn load_block_textures(json_path: &str) -> Result<LoadedTextures, std::io::Error> {
 	let mut r = LoadedTextures {
-		blocks: Vec::new(),
+		blocks: HashMap::new(),
 		textures: Vec::new(),
 		size: vec2(0, 0)
 	};
@@ -141,7 +145,19 @@ pub fn load_block_textures(json_path: &str) -> Result<LoadedTextures, std::io::E
 			}
 		}
 
-		r.blocks.push((name.to_owned(), texs))
+		let found_block_id = match name {
+			"stone" => Some(BlockId::Stone),
+			"grass" => Some(BlockId::Grass),
+			"dirt" => Some(BlockId::Dirt),
+			"snow" => None,
+			"snow_grass" => None,
+			_ => None
+		};
+		if let Some(block_id) = found_block_id {
+			r.blocks.insert(block_id, texs);
+		} else {
+			eprintln!("warning: unknown block id: {}", name);
+		}
 	}
 
 	Ok(r)
