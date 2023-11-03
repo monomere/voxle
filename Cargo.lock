@@ -305,37 +305,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bugs"
-version = "0.1.0"
-dependencies = [
- "bson",
- "bytemuck",
- "egui",
- "egui_wgpu_backend",
- "egui_winit_platform",
- "env_logger",
- "image",
- "json",
- "log",
- "nalgebra-glm",
- "noise",
- "num",
- "num-derive",
- "num-traits",
- "pollster",
- "rand 0.8.5",
- "raw-window-handle 0.5.2",
- "serde",
- "serde_derive",
- "shipyard",
- "static_assertions",
- "std140",
- "wgpu",
- "wgpu_text",
- "winit 0.29.2",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2670,6 +2639,37 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+
+[[package]]
+name = "voxle"
+version = "0.1.0"
+dependencies = [
+ "bson",
+ "bytemuck",
+ "egui",
+ "egui_wgpu_backend",
+ "egui_winit_platform",
+ "env_logger",
+ "image",
+ "json",
+ "log",
+ "nalgebra-glm",
+ "noise",
+ "num",
+ "num-derive",
+ "num-traits",
+ "pollster",
+ "rand 0.8.5",
+ "raw-window-handle 0.5.2",
+ "serde",
+ "serde_derive",
+ "shipyard",
+ "static_assertions",
+ "std140",
+ "wgpu",
+ "wgpu_text",
+ "winit 0.29.2",
+]
 
 [[package]]
 name = "walkdir"

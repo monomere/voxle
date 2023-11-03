@@ -1,12 +1,18 @@
 # TODO
 
+> NB: this isn't supposed to be readable by people other than me *for now*.
+
 - Tasks:
   - [ ] Rendering:
     - [x] Array textures
-    - [ ] Use GLFW or resolve cursor problem
+    - [ ] Use GLFW or resolve choppy cursor problem
     - [ ] Array texture swapping [1]
     - [ ] Non-block tiles
     - [ ] Entities
+  - [ ] Math library:
+    - [ ] Add matrix support
+    - [ ] Replace glm calls
+    - [ ] (Long-term) move to separate crate
   - [ ] Chunk storage:
     - Block ID limit (16 bit is not enough)
     - Use view-box based indexing [2]
@@ -14,11 +20,11 @@
     - Layers [3]
   - [ ] Gameplay:
     - [ ] Inventory
-    - [ ] Player character [:4]
     - [ ] Entities
-    - [ ] Physics:
-      - [ ] Collision
-      - [ ] Gravity
+      - [ ] Player character
+      - [ ] Physics:
+        - [ ] Collision
+        - [ ] Gravity
 
 - Research/resolve:
   - Rendering:

@@ -1,6 +1,6 @@
 use crate::{gfx, math::*};
 
-use super::{CUBE_FACES, CUBE_VERTICES, texture::{BlockTextures, TextureId, LoadedTextures}};
+use super::{CUBE_FACES, CUBE_VERTICES, texture::{TextureId, LoadedTextures}};
 
 pub const CHUNK_SIZE: Vec3<usize> = Vector([32, 32, 32]);
 
@@ -37,7 +37,8 @@ pub struct Block {
 	pub state: u16
 }
 
-#[non_exhaustive]
+	#[allow(dead_code)]
+	#[non_exhaustive]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BlockId {
 	Air = 0,
