@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::{gfx, math::{Vec2u32, vec2, vec3, Vec3f32, Vector, Vec4f32}, game::texture};
+use crate::{gfx, math::*, game::texture};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -283,7 +283,7 @@ pub struct ChunkRenderer {
 	uniform_bind_group: wgpu::BindGroup,
 	world_uniforms_buffer: wgpu::Buffer,
 	texture_bind_group: wgpu::BindGroup,
-	texture: gfx::Texture,
+	_texture: gfx::Texture,
 	world_uniforms: WorldUniforms,
 	outline_mesh: gfx::Mesh<OutlineVertex>,
 	pub camera: Camera
@@ -504,7 +504,7 @@ impl ChunkRenderer {
 			block_render_pipeline,
 			block_wf_render_pipeline,
 			outline_render_pipeline,
-			texture: block_texture,
+			_texture: block_texture,
 			texture_bind_group,
 			world_uniforms_buffer,
 			uniform_bind_group,
@@ -520,11 +520,6 @@ impl ChunkRenderer {
 			usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
 			contents
 		})
-	}
-
-	pub fn texture_size(&self) -> Vec2u32 {
-		let size = self.texture.size();
-		vec2(size.width, size.height)
 	}
 
 	/// NB: run before rendering.

@@ -1,25 +1,11 @@
 use std::collections::HashMap;
 
-use crate::math::{Rect, Vec2u32, vec2};
+use crate::math::*;
 
 use super::{Dir, chunk::BlockId};
 
 #[derive(Clone, Copy)]
 pub struct TextureId(pub u32);
-
-impl TextureId {
-	const SIZE: u32 = 16;
-
-	fn rect(self) -> Rect<u32> {
-		let p = self.0 * Self::SIZE;
-		Rect {
-			x: p,
-			y: 0,
-			w: Self::SIZE,
-			h: Self::SIZE
-		}
-	}
-}
 
 pub struct BlockSides<T: Copy + Clone> {
 	pub top: T,
@@ -35,10 +21,12 @@ impl<T: Copy + Clone> BlockSides<T> {
 		Self { top: t, bottom: t, left: t, right: t, front: t, back: t }
 	}
 
+	#[allow(dead_code)]
 	pub fn cylinder(top: T, bottom: T, side: T) -> Self {
 		Self { top, bottom, left: side, right: side, front: side, back: side }
 	}
 
+	#[allow(dead_code)]
 	pub fn all(&self) -> [T; 6] {
 		[self.top, self.bottom, self.left, self.right, self.front, self.back]
 	}
