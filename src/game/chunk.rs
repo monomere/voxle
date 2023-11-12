@@ -111,7 +111,7 @@ pub const CUBE_VERTICES: [[f32; 3]; 8] = [
 pub const CUBE_FACES: [(Dir, [usize; 4]); 6] = [
 	(Dir::PX, [5, 4, 0, 1]),
 	(Dir::NX, [7, 6, 2, 3]),
-	(Dir::PY, [0, 3, 2, 1]),
+	(Dir::PY, [3, 2, 1, 0]),
 	(Dir::NY, [4, 5, 6, 7]),
 	(Dir::PZ, [4, 7, 3, 0]),
 	(Dir::NZ, [6, 5, 1, 2]),
@@ -125,6 +125,34 @@ impl Block {
 			None => true
 		}
 	}
+}
+
+// 0 1 3 2 best (top face is weird in corners)
+static mut AO_INDEX_MAP_: &'static mut [u32] = &mut [0, 1, 2, 3];
+
+pub fn ao_index_map() -> &'static [u32] {
+	unsafe {
+		AO_INDEX_MAP_
+	}
+}
+
+pub fn next_ao_index_map() {
+	let nums: &'static mut [u32] = unsafe { &mut AO_INDEX_MAP_ };
+	use std::cmp::Ordering;
+	// or use feature(array_windows) on nightly
+	let last_ascending = match nums.windows(2).rposition(|w| w[0] < w[1]) {
+		Some(i) => i,
+		None => {
+			nums.reverse();
+			return;
+		}
+	};
+
+	let swap_with = nums[last_ascending + 1..]
+		.binary_search_by(|n| u32::cmp(&nums[last_ascending], n).then(Ordering::Less))
+		.unwrap_err(); // cannot fail because the binary search will never succeed
+	nums.swap(last_ascending, last_ascending + swap_with);
+	nums[last_ascending + 1..].reverse();
 }
 
 pub struct ChunkData {
@@ -227,10 +255,10 @@ impl ChunkData {
 							.unwrap_or(TextureId(0)).0;
 
 						let mut ao = [0u8; 4];
-						let ao_index_map = [0, 1, 2, 3];
+						// let ao_index_map = [0, 1, 2, 3];
 						for (index, vertex_index) in face_vertices.into_iter().enumerate() {
 							let vertex = Vector(CUBE_VERTICES[vertex_index]);
-							ao[ao_index_map[index]] = {
+							ao[ao_index_map()[index] as usize] = {
 								let vertex = vertex * 2.0; // times 2 because vertices are -0.5..=0.5
 								let vertex_cross = direction.exclude_axis(vertex.each_as());
 								let corner = is_block_solid_at(pos, vertex.each_as());

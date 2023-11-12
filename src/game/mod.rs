@@ -344,6 +344,12 @@ impl State for GameState {
 					self.update_chunk(&context.gfx, chunk_pos);
 				}
 			}
+
+			if context.input().key(KeyCode::KeyL).just_pressed() {
+				chunk::next_ao_index_map();
+				self.chunks.clear();
+				self.generate_chunks(context.gfx);
+			}
 		}
 
 		let screen_width = context.gfx.config.width as i32;
@@ -385,6 +391,7 @@ impl State for GameState {
 			ui.label(format!("block: {:?}", block.map(|b| b.id)));
 			ui.label(format!("   at: {:?}", loc_block_pos));
 			ui.label(format!("target: {:?}", self.target_block));
+			ui.label(format!("ao_map: {:?}", chunk::ao_index_map()));
 		});
 	}
 }
