@@ -137,14 +137,14 @@ pub fn load_block_textures(json_path: &str) -> Result<LoadedTextures, std::io::E
 			"stone" => Some(BlockId::Stone),
 			"grass" => Some(BlockId::Grass),
 			"dirt" => Some(BlockId::Dirt),
-			"snow" => None,
-			"snow_grass" => None,
+			"snow" => Some(BlockId::Snow),
+			"snow_grass" => Some(BlockId::SnowGrass),
 			_ => None
 		};
 		if let Some(block_id) = found_block_id {
 			r.blocks.insert(block_id, texs);
 		} else {
-			eprintln!("warning: unknown block id: {}", name);
+			eprintln!("unknown block id: {}", name);
 		}
 	}
 

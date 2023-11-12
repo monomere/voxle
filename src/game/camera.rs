@@ -128,8 +128,10 @@ impl CameraController {
 		// camera.fovy += ctx.window().input.scroll_diff() * self.speed * self.sensitivity * dt;
 		
 		if self.capturing || ctx.input().button(0).held() {
-			let rotate_horizontal = ctx.window().input.mouse_delta().0;
-			let rotate_vertical = ctx.window().input.mouse_delta().1;
+			let (
+				rotate_horizontal,
+				rotate_vertical
+			) = ctx.window().input.mouse_delta().into();
 
 			camera.yaw += rotate_horizontal * self.sensitivity * dt;
 			camera.pitch += -rotate_vertical * self.sensitivity * dt;

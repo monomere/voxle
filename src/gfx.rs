@@ -27,7 +27,7 @@ impl Gfx {
 	pub async fn new(window: Window) -> Self {
 		let size = window.window.inner_size();
 		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-			backends: wgpu::Backends::all(),
+			backends: wgpu::Backends::VULKAN,
 			dx12_shader_compiler: Default::default(),
 		});
 		
@@ -45,7 +45,7 @@ impl Gfx {
 		
 		let (device, queue) = adapter.request_device(
 			&wgpu::DeviceDescriptor {
-				features: wgpu::Features::POLYGON_MODE_LINE | wgpu::Features::PUSH_CONSTANTS,
+				features: wgpu::Features::PUSH_CONSTANTS | wgpu::Features::POLYGON_MODE_LINE,
 				// WebGL doesn't support all of wgpu's features, so if
 				// we're building for the web we'll have to disable some.
 				limits: if cfg!(target_arch = "wasm32") {
@@ -338,16 +338,18 @@ pub struct MeshBuffers<V: Vertex> {
 	pub vertex_count: usize,
 	pub vertex_buffer: wgpu::Buffer,
 	pub index_buffer: wgpu::Buffer,
+	pub name: Option<String>,
 	_pd: PhantomData<V>
 }
 
 impl<V: Vertex> MeshBuffers<V> {
-	fn new(gfx: &Gfx, vertices: &[V], indices: &[u32]) -> Self {
+	fn new(gfx: &Gfx, vertices: &[V], indices: &[u32], name: Option<&str>) -> Self {
 		Self {
+			name: name.map(|s| s.to_string()),
 			vertex_count: vertices.len(),
 			index_count: indices.len(),
-			vertex_buffer: Self::create_vertex_buffer(gfx, vertices),
-			index_buffer: Self::create_index_buffer(gfx, indices),
+			vertex_buffer: Self::create_vertex_buffer(gfx, vertices, name),
+			index_buffer: Self::create_index_buffer(gfx, indices, name),
 			_pd: PhantomData
 		}
 	}
@@ -359,7 +361,7 @@ impl<V: Vertex> MeshBuffers<V> {
 			gfx.queue.write_buffer(&self.vertex_buffer, 0, bytes);
 		} else {
 			self.vertex_count = vertices.len();
-			self.vertex_buffer = Self::create_vertex_buffer(gfx, vertices);
+			self.vertex_buffer = Self::create_vertex_buffer(gfx, vertices, self.name.as_ref().map(|s| s.as_str()));
 		}
 	}
 
@@ -370,21 +372,21 @@ impl<V: Vertex> MeshBuffers<V> {
 			gfx.queue.write_buffer(&self.index_buffer, 0, bytes);
 		} else {
 			self.index_count = indices.len();
-			self.index_buffer = Self::create_index_buffer(gfx, indices);
+			self.index_buffer = Self::create_index_buffer(gfx, indices, self.name.as_ref().map(|s| s.as_str()));
 		}
 	}
 
-	fn create_vertex_buffer(gfx: &Gfx, vertices: &[V]) -> wgpu::Buffer {
+	fn create_vertex_buffer(gfx: &Gfx, vertices: &[V], name: Option<&str>) -> wgpu::Buffer {
 		gfx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: None,
+			label: name.map(|name| format!("{} Vertex Buffer", name)).as_ref().map(|s| s.as_str()),
 			usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
 			contents: bytemuck::cast_slice(vertices),
 		})
 	}
 
-	fn create_index_buffer(gfx: &Gfx, indices: &[u32]) -> wgpu::Buffer {
+	fn create_index_buffer(gfx: &Gfx, indices: &[u32], name: Option<&str>) -> wgpu::Buffer {
 		gfx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: None,
+			label: name.map(|name| format!("{} Index Buffer", name)).as_ref().map(|s| s.as_str()),
 			usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::INDEX,
 			contents: bytemuck::cast_slice(indices),
 		})
@@ -392,8 +394,8 @@ impl<V: Vertex> MeshBuffers<V> {
 }
 
 impl<V: Vertex> Mesh<V> {
-	pub fn new(gfx: &Gfx, vertices: &[V], indices: &[u32]) -> Self {
-		Self { buffers: MeshBuffers::new(gfx, vertices, indices) }
+	pub fn new(gfx: &Gfx, vertices: &[V], indices: &[u32], name: Option<&str>) -> Self {
+		Self { buffers: MeshBuffers::new(gfx, vertices, indices, name) }
 	}
 
 	pub fn update(&mut self, gfx: &Gfx, vertices: &[V], indices: &[u32]) {
@@ -402,8 +404,10 @@ impl<V: Vertex> Mesh<V> {
 	}
 
 	pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
-		render_pass.set_vertex_buffer(0, self.buffers.vertex_buffer.slice(..));
-		render_pass.set_index_buffer(self.buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-		render_pass.draw_indexed(0..self.buffers.index_count as u32, 0, 0..1);
+		if self.buffers.index_count > 0 {
+			render_pass.set_vertex_buffer(0, self.buffers.vertex_buffer.slice(..));
+			render_pass.set_index_buffer(self.buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+			render_pass.draw_indexed(0..self.buffers.index_count as u32, 0, 0..1);
+		}
 	}
 }

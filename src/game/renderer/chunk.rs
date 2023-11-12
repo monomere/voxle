@@ -11,8 +11,29 @@ pub struct OutlineVertex {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct BlockVertex {
-	pub position: [f32; 3],
-	pub data: u32,
+	pub data0: u32, // z:10 y:10 x:10 uv:2
+	pub data1: u32, // tid:24 ao:8
+}
+
+fn i32_to_i10(i: i32) -> u32 {
+	let i = i as u32;
+	((i >> 31) << 9) | (i & 0x1ff)
+}
+
+impl BlockVertex {
+	pub fn new(pos: Vec3f32, uv: u8, ao: &[u8; 4], tex: u32) -> Self {
+		Self {
+			data0: ((uv as u32 & 0b11) << 30)
+				| (i32_to_i10((pos.x * 2.0) as i32) << 00)
+				| (i32_to_i10((pos.y * 2.0) as i32) << 10)
+				| (i32_to_i10((pos.z * 2.0) as i32) << 20),
+			data1: ((tex as u32) << 8)
+				| ((ao[0] as u32 & 0b11) << 0)
+				| ((ao[1] as u32 & 0b11) << 2)
+				| ((ao[2] as u32 & 0b11) << 4)
+				| ((ao[3] as u32 & 0b11) << 6)
+		}
+	}
 }
 
 #[repr(C)]
@@ -44,24 +65,18 @@ fn create_block_pipeline(
 				array_stride: std::mem::size_of::<BlockVertex>() as wgpu::BufferAddress,
 				step_mode: wgpu::VertexStepMode::Vertex,
 				attributes: &[
-					// position
+					// data0 (position, ao)
 					wgpu::VertexAttribute {
-						format: wgpu::VertexFormat::Float32x3,
+						format: wgpu::VertexFormat::Uint32,
 						offset: 0,
 						shader_location: 0
 					},
-					// data
+					// data1 (uvs, texture)
 					wgpu::VertexAttribute {
 						format: wgpu::VertexFormat::Uint32,
-						offset: 3 * 4,
+						offset: 4,
 						shader_location: 1
 					},
-					// // texcoord
-					// wgpu::VertexAttribute {
-					// 	format: wgpu::VertexFormat::Float32x2,
-					// 	offset: 4 * 4,
-					// 	shader_location: 2
-					// }
 				],
 			}]
 		},
@@ -296,7 +311,7 @@ impl ChunkRenderer {
 
 	pub fn new(gfx: &gfx::Gfx, block_textures: &texture::LoadedTextures) -> Self {
 		let camera = Camera {
-			position: Vector([0.0, 0.5, -2.0]),
+			position: Vector([0.0, 128.5, -2.0]),
 			yaw: 3.0 * glm::quarter_pi::<f32>(),
 			pitch: 0.0,
 			aspect: gfx.config.width as f32 / gfx.config.height as f32,
@@ -436,9 +451,9 @@ impl ChunkRenderer {
 			texture: block_texture,
 			view: block_texture_view,
 			sampler: Some(gfx.device.create_sampler(&wgpu::SamplerDescriptor {
-				address_mode_u: wgpu::AddressMode::Repeat,
-				address_mode_v: wgpu::AddressMode::Repeat,
-				address_mode_w: wgpu::AddressMode::Repeat,
+				address_mode_u: wgpu::AddressMode::ClampToEdge,
+				address_mode_v: wgpu::AddressMode::ClampToEdge,
+				address_mode_w: wgpu::AddressMode::ClampToEdge,
 				mag_filter: wgpu::FilterMode::Nearest,
 				min_filter: wgpu::FilterMode::Nearest,
 				mipmap_filter: wgpu::FilterMode::Nearest,
@@ -491,13 +506,13 @@ impl ChunkRenderer {
 		});
 
 		let outline_mesh = {
-			let vertices = crate::game::CUBE_VERTICES.map(|v| OutlineVertex { position: v });
+			let vertices = super::super::chunk::CUBE_VERTICES.map(|v| OutlineVertex { position: v });
 			let indices: [u32; 24] = [
 				0, 1,  1, 2,  2, 3,  3, 0,
 				4, 5,  5, 6,  6, 7,  7, 4,
 				0, 4,  1, 5,  2, 6,  3, 7,
 			];
-			gfx::Mesh::new(gfx, &vertices, &indices)
+			gfx::Mesh::new(gfx, &vertices, &indices, Some("Block Outline Mesh"))
 		};
 
 		Self {

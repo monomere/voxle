@@ -1,88 +1,72 @@
 use noise::NoiseFn;
 use crate::math::*;
-use super::chunk;
+use super::chunk::{self, CHUNK_SIZE, Block, BlockId};
+
+
+// Process:
+// 1. voronoi noise for mountain ranges
+// 2. climate zone (can be "ocean")
+// 3. biome (can be "lake")
+// 4. river
+// 5. terrain height (includes mountain ranges)
+// 6. cave
+// 7. block
 
 
 pub struct WorldGen {
-	noise: noise::Perlin // noise::Fbm<noise::Perlin>
+	noise: noise::Fbm<noise::Perlin>,
+	noise2: noise::RidgedMulti<noise::Perlin>
 }
 
 impl WorldGen {
 	pub fn new(seed: u32) -> Self {
 		Self {
-			noise: noise::Perlin::new(seed)
+			noise: noise::Fbm::new(seed),
+			noise2: noise::RidgedMulti::new(seed),
 		}
 	}
 
-	fn get_height_at(&self, pos: Vec2i32) -> i32 {
-		((self.noise.get((pos.each_as::<f64>() * 0.01).0) * 2.0 - 1.0) * chunk::CHUNK_SIZE.y as f64) as i32
+	fn get_height(&self, world_pos: Vec2i32) -> i32 {
+		let h = self.noise.get((world_pos.each_as() * 0.001).0) * 64.0;
+		let h2 = self.noise2.get((world_pos.each_as() * 0.0005).0) * 128.0;
+		(h + h2) as i32
 	}
 
-	#[allow(dead_code)]
-	fn fill_chunk(chunk: &mut chunk::Chunk, block: chunk::Block) {
-		for y in 0..chunk::CHUNK_SIZE.y as i32 {
-			for z in 0..chunk::CHUNK_SIZE.z as i32 {
-				for x in 0..chunk::CHUNK_SIZE.x as i32 {
-					chunk.data.set_block(vec3(x, y, z), block);
+	fn get_top_layer_block(&self, y: i32, height: i32) -> Block {
+		if y > height - 5 {
+			if y > 85 {
+				Block { id: BlockId::Snow as u16, state: 0 }
+			} else if y == height {
+				if y > 64 {
+					Block { id: BlockId::SnowGrass as u16, state: 0 }
+				} else {
+					Block { id: BlockId::Grass as u16, state: 0 }
 				}
+			} else {
+				Block { id: BlockId::Dirt as u16, state: 0 }
 			}
-		}
-	}
-
-	fn grass_dirt_stone(y: i32, top_y: i32) -> u16 {
-		if y == top_y {
-			chunk::BlockId::Grass as u16
-		} else if top_y - y < 5 {
-			chunk::BlockId::Dirt as u16
 		} else {
-			chunk::BlockId::Stone as u16
+			Block { id: BlockId::Stone as u16, state: 0 }
 		}
 	}
 
 	pub fn generate_chunk(&self, chunk_pos: Vec3i32) -> Option<chunk::Chunk> {
 		let mut chunk = chunk::Chunk::new(chunk_pos, chunk::ChunkData::new());
-		let chunk_pos_block = chunk_pos * chunk::CHUNK_SIZE.each_as::<i32>();
 
-		if chunk_pos.y < -1 {
-			for y in 0..chunk::CHUNK_SIZE.y as i32 {
-				for z in 0..chunk::CHUNK_SIZE.z as i32 {
-					for x in 0..chunk::CHUNK_SIZE.x as i32 {
-						chunk.data.set_block(vec3(x, y, z), chunk::Block {
-							id: if chunk_pos.y == -2 {
-								Self::grass_dirt_stone(y, chunk::CHUNK_SIZE.y as i32 - 1)
-							} else {
-								chunk::BlockId::Stone as u16
-							},
-							state: 0
-						});
+		for z in 0..CHUNK_SIZE.z as i32 {
+			for x in 0..CHUNK_SIZE.x as i32 {
+				let local_pos = vec2(x, z);
+				let world_pos = chunk.position.xz() * CHUNK_SIZE.xz().each_as() + local_pos;
+				let height = self.get_height(world_pos);
+				for y in 0..CHUNK_SIZE.y as i32 {
+					let local_pos = vec3(x, y, z);
+					let world_y = local_pos.y + chunk.position.y * CHUNK_SIZE.y as i32;
+					if world_y > height {
+						break
 					}
+					chunk.data.set_block(local_pos, self.get_top_layer_block(world_y, height));
 				}
 			}
-			return Some(chunk);
-		}
-
-		for z in 0..chunk::CHUNK_SIZE.z as i32 {
-			for x in 0..chunk::CHUNK_SIZE.x as i32 {
-				let abs_y = self.get_height_at(chunk_pos_block.xz() + vec2(x, z));
-
-				let (chunk_y, loc_y) = num::integer::div_mod_floor(abs_y, chunk::CHUNK_SIZE.y as i32);
-
-				// check if we're in our chunk.
-				if chunk_y >= chunk_pos.y {
-					let (loc_y, top_y) = if chunk_y > chunk_pos.y {
-						(chunk::CHUNK_SIZE.y as i32 - 1, -1)
-					} else {
-						(loc_y.abs(), loc_y.abs())
-					};
-
-					for y in 0..=loc_y {
-						chunk.data.set_block(vec3(x, y, z), chunk::Block {
-							id: Self::grass_dirt_stone(y, top_y),
-							state: 0
-						});
-					}
-				}
-			}	
 		}
 
 		Some(chunk)

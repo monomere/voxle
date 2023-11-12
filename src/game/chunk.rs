@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use crate::{gfx, math::*};
 
-use super::{CUBE_FACES, CUBE_VERTICES, texture::{TextureId, LoadedTextures}};
+use super::{texture::{TextureId, LoadedTextures}, Dir};
 
 pub const CHUNK_SIZE: Vec3<usize> = Vector([32, 32, 32]);
 
@@ -37,15 +39,26 @@ pub struct Block {
 	pub state: u16
 }
 
-	#[allow(dead_code)]
-	#[non_exhaustive]
+impl Default for Block {
+	fn default() -> Self {
+		Self {
+			id: 0,
+			state: 0
+		}		
+	}
+}
+
+#[allow(dead_code)]
+#[non_exhaustive]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BlockId {
 	Air = 0,
 	Stone = 1,
 	Grass = 2,
 	Dirt = 3,
-	_EndId = 4,
+	Snow = 4,
+	SnowGrass = 5,
+	_EndId = 6,
 }
 
 
@@ -66,6 +79,8 @@ impl BlockId {
 			BlockId::Stone => true,
 			BlockId::Grass => true,
 			BlockId::Dirt => true,
+			BlockId::SnowGrass => true,
+			BlockId::Snow => true,
 			_ => false,
 		}
 	}
@@ -81,6 +96,28 @@ impl BlockId {
 	// }
 }
 
+pub const CUBE_VERTICES: [[f32; 3]; 8] = [
+	// X  /  Y  /  Z //
+	[ 0.5,  0.5,  0.5], // 0
+	[ 0.5,  0.5, -0.5], // 1
+	[-0.5,  0.5, -0.5], // 2
+	[-0.5,  0.5,  0.5], // 3
+	[ 0.5, -0.5,  0.5], // 4
+	[ 0.5, -0.5, -0.5], // 5
+	[-0.5, -0.5, -0.5], // 6
+	[-0.5, -0.5,  0.5], // 7
+];
+
+pub const CUBE_FACES: [(Dir, [usize; 4]); 6] = [
+	(Dir::PX, [5, 4, 0, 1]),
+	(Dir::NX, [7, 6, 2, 3]),
+	(Dir::PY, [0, 3, 2, 1]),
+	(Dir::NY, [4, 5, 6, 7]),
+	(Dir::PZ, [4, 7, 3, 0]),
+	(Dir::NZ, [6, 5, 1, 2]),
+];
+
+
 impl Block {
 	pub fn is_solid(&self) -> bool {
 		match BlockId::from_u16(self.id) {
@@ -91,28 +128,13 @@ impl Block {
 }
 
 pub struct ChunkData {
-	pub blocks: [Block; CHUNK_BLOCK_COUNT]
+	pub blocks: Box<[Block; CHUNK_BLOCK_COUNT]>
 }
-
-pub struct UnsafeChunkDataRef {
-	_ptr: *const ChunkData
-}
-
-impl UnsafeChunkDataRef {
-	pub fn new(ptr: *const ChunkData) -> Self {
-		Self { _ptr: ptr }
-	}
-
-	pub fn get(&self) -> &ChunkData {
-		unsafe { &*self._ptr }
-	}
-}
-
 
 impl ChunkData {
 	pub fn new() -> Self {
 		Self {
-			blocks: [Block { id: 0, state: 0 }; CHUNK_BLOCK_COUNT]
+			blocks: unsafe { Box::new_zeroed().assume_init() }
 		}
 	}
 
@@ -147,18 +169,38 @@ impl ChunkData {
 	pub fn generate_mesh(
 		&self,
 		chunk_position: Vec3i32,
-		chunk_neighbors: &[Option<UnsafeChunkDataRef>],
+		chunk: &HashMap<Vec3i32, Chunk>,
 		block_textures: &LoadedTextures
 	) -> (Vec<super::renderer::chunk::BlockVertex>, Vec<u32>) {
 		let mut vertices = Vec::<super::renderer::chunk::BlockVertex>::new();
 		let mut indices = Vec::<u32>::new();
+
+		let is_block_solid_at = |local: Vec3i32, normal: Vec3i32| -> bool {
+			if let Some(offset) = self.coords_to_offset(local + normal) {
+				self.blocks[offset].is_solid()
+			} else if let Some(neighbor_chunk) = &chunk.get(&(chunk_position + normal)) {
+				let pos = normal.map_indexed(|c, i| {
+					if c == 0 { local.0[i] }
+					else if c > 0 { 0 }
+					else { CHUNK_SIZE.0[i] as i32 - 1 }
+				});
+
+				if let Some(offset) = neighbor_chunk.data.coords_to_offset(pos) {
+					neighbor_chunk.data.blocks[offset].is_solid()
+				} else {
+					panic!("😭")
+				}
+			} else {
+				true
+			}
+		};
 
 		'outer: for y in 0..CHUNK_SIZE.y as i32 {
 			for z in 0..CHUNK_SIZE.z as i32 {
 				for x in 0..CHUNK_SIZE.x as i32 {
 					let pos = vec3(x, y, z);
 					let offset = self.coords_to_offset(pos);
-					if let None = offset { break 'outer }
+					if offset.is_none() { break 'outer }
 					let offset = offset.unwrap();
 
 					let block = self.blocks[offset];
@@ -174,28 +216,8 @@ impl ChunkData {
 
 					for (direction, face_vertices) in CUBE_FACES {
 						let normal = direction.normal::<i32>();
-						if let Some(offset) = self.coords_to_offset(normal + pos) {
-							if self.blocks[offset].is_solid() {
-								continue; // don't render faces facing solid blocks.
-							}
-						} else { // neighbor block in different chunk:
-							if let Some(neighbor_chunk) = &chunk_neighbors[direction as usize] {
-								let pos = direction.zero_axis(
-									pos,
-									CHUNK_SIZE.each_as() - 1,
-									Vector::zero()
-								);
-
-								if let Some(offset) = neighbor_chunk.get().coords_to_offset(pos) {
-									if neighbor_chunk.get().blocks[offset].is_solid() {
-										continue; // don't render faces facing solid blocks (in other chunks).
-									}
-								} else {
-									panic!("😭");
-								}
-							} else {
-								continue; // don't render faces for chunks that aren't generated yet.
-							}
+						if is_block_solid_at(pos, normal) {
+							continue;
 						}
 
 						let start_index = vertices.len() as u32;
@@ -203,18 +225,35 @@ impl ChunkData {
 						let texture_id = (BlockId::from_u16(block.id))
 							.and_then(|id| block_textures.blocks.get(&id).map(|tex| tex.in_direction(direction)))
 							.unwrap_or(TextureId(0)).0;
-	
-						for (index_index, index) in face_vertices.into_iter().enumerate() {
-							let data = (texture_id as u32) << 5
-								| ((index_index as u32) & 0b11) << 3
-								| ((direction as u32) & 0b111) << 0 // TODO: check if in cave (for shading)
-								;
 
+						let mut ao = [0u8; 4];
+						let ao_index_map = [0, 1, 2, 3];
+						for (index, vertex_index) in face_vertices.into_iter().enumerate() {
+							let vertex = Vector(CUBE_VERTICES[vertex_index]);
+							ao[ao_index_map[index]] = {
+								let vertex = vertex * 2.0; // times 2 because vertices are -0.5..=0.5
+								let vertex_cross = direction.exclude_axis(vertex.each_as());
+								let corner = is_block_solid_at(pos, vertex.each_as());
+								let edge1 = is_block_solid_at(pos, direction.with_others(vec2(vertex_cross.x, 0)));
+								let edge2 = is_block_solid_at(pos, direction.with_others(vec2(0, vertex_cross.y)));
+								
+								if edge1 && edge2 {
+									0
+								} else {
+									3 - (edge1 as u8 + edge2 as u8 + corner as u8)
+								}
+							};
+						}
+
+						for (index_index, index) in face_vertices.into_iter().enumerate() {
 							let vertex = Vector(CUBE_VERTICES[index]);
-							vertices.push(super::renderer::chunk::BlockVertex {
-								position: (vertex + block_position).0,
-								data,
-							});
+
+							vertices.push(super::renderer::chunk::BlockVertex::new(
+								vertex + block_position,
+								index_index as u8,
+								&ao,
+								texture_id
+							));
 						}
 
 						for index in [0, 1, 2, 2, 3, 0] {
@@ -230,7 +269,7 @@ impl ChunkData {
 }
 
 pub struct Chunk {
-	pub data: Box<ChunkData>,
+	pub data: ChunkData,
 	pub mesh: Option<gfx::Mesh<super::renderer::chunk::BlockVertex>>,
 	pub position: Vec3i32
 }
@@ -238,18 +277,18 @@ pub struct Chunk {
 impl Chunk {
 	pub fn new(position: Vec3i32, data: ChunkData) -> Self {
 		Self {
-			data: Box::new(data),
+			data,
 			position,
 			mesh: None,
 		}
 	}
 
-	pub fn update_mesh(&mut self, gfx: &gfx::Gfx, chunk_neighbors: &[Option<UnsafeChunkDataRef>], block_textures: &LoadedTextures) {
-		let (vertices, indices) = self.data.generate_mesh(self.position, chunk_neighbors, block_textures);
+	pub fn update_mesh(&mut self, gfx: &gfx::Gfx, chunks: &HashMap<Vec3i32, Chunk>, block_textures: &LoadedTextures) {
+		let (vertices, indices) = self.data.generate_mesh(self.position, chunks, block_textures);
 		if let Some(ref mut mesh) = &mut self.mesh {
 			mesh.update(gfx, &vertices, &indices);
 		} else {
-			self.mesh = Some(gfx::Mesh::new(gfx, &vertices, &indices));
+			self.mesh = Some(gfx::Mesh::new(gfx, &vertices, &indices, Some(format!("Chunk {:?}", self.position.0).as_str())));
 		}
 	}
 }

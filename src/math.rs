@@ -20,6 +20,10 @@ impl<T: Scalar, const N: usize> Vector<T, N> {
 		Vector(self.0.map(f))
 	}
 
+	pub fn map_indexed<U: Scalar, F: Fn(T, usize) -> U>(&self, f: F) -> Vector<U, N> {
+		Vector::<U, N>::make(|i| f(self.0[i], i))
+	}
+
 	pub fn zip_map<
 		T2: Scalar,
 		// V2: ,

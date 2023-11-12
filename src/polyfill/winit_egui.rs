@@ -3,6 +3,7 @@
 //! You need to create a [`Platform`] and feed it with `winit::event::Event` events.
 //! Use `begin_frame()` and `end_frame()` to start drawing the egui UI.
 //! A basic usage example can be found [here](https://github.com/hasenbanck/egui_example).
+//! This (egui_winit_platform) has been modified by monomere to support winit 1.29.2
 #![warn(missing_docs)]
 #![allow(dead_code)]
 

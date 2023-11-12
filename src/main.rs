@@ -1,6 +1,8 @@
 #![feature(trait_alias)]
 #![feature(const_trait_impl)]
+#![feature(new_uninit)]
 
+use math::{Vec2f32, vec2};
 use state::State;
 use winit::{
 	event::*,
@@ -62,7 +64,7 @@ impl InputElementState {
 pub struct Input {
 	keys: [InputElementState; 256],
 	buttons: [InputElementState; 256],
-	mouse_delta: (f32, f32),
+	mouse_delta: Vec2f32,
 	close_requested: bool,
 }
 
@@ -71,13 +73,13 @@ impl Input {
 		Self {
 			keys: [InputElementState::None; 256],
 			buttons: [InputElementState::None; 256],
-			mouse_delta: (0.0, 0.0),
+			mouse_delta: vec2(0.0, 0.0),
 			close_requested: false,
 		}
 	}
 
 	fn reset_deltas(&mut self) {
-		self.mouse_delta = (0.0, 0.0);
+		self.mouse_delta = vec2(0.0, 0.0);
 		for key in &mut self.keys {
 			*key = match *key {
 				InputElementState::JustPressed => InputElementState::Held,
@@ -99,7 +101,8 @@ impl Input {
 			Event::DeviceEvent { event, .. } => {
 				match *event {
 					DeviceEvent::MouseMotion { delta } => {
-						self.mouse_delta = (delta.0 as f32, delta.1 as f32);
+						let new_mouse_delta = vec2(delta.0, delta.1).each_as();
+						self.mouse_delta = self.mouse_delta.lerp(new_mouse_delta, 0.5);
 						true
 					},
 					_ => false
@@ -154,7 +157,7 @@ impl Input {
 		self.close_requested
 	}
 
-	pub fn mouse_delta(&self) -> (f32, f32) {
+	pub fn mouse_delta(&self) -> Vec2f32 {
 		self.mouse_delta
 	}
 }
@@ -215,16 +218,16 @@ impl LoadContext<'_> {
 }
 
 async fn run() {
-	env_logger::init();
-	
 	let event_loop = EventLoop::new().unwrap();
 	
 	let mut gfx = Box::new(gfx::Gfx::new(Window {
 		input: Box::new(Input::new()),
-		window: WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::new(1280, 720)).build(&event_loop).unwrap(),
+		window: WindowBuilder::new()
+			.with_inner_size(winit::dpi::PhysicalSize::new(1280, 720))
+			.build(&event_loop)
+			.unwrap(),
 		capture_cursor: false
 	}).await);
-
 	
 	let mut state = game::GameState::new(&gfx);
 
@@ -307,5 +310,7 @@ async fn run() {
 }
 
 fn main() {
+	std::env::set_var("WINIT_UNIX_BACKEND", "x11");
+	env_logger::init();
 	pollster::block_on(run());
 }

@@ -5,7 +5,9 @@
 - Tasks:
   - [ ] Rendering:
     - [x] Array textures
-    - [ ] Use GLFW or resolve choppy cursor problem
+    - [x] Use GLFW or resolve choppy cursor problem
+    - [x] Smaller vertex
+    - [ ] Ambient Occlusion
     - [ ] Array texture swapping [1]
     - [ ] Non-block tiles
     - [ ] Entities
@@ -14,6 +16,7 @@
     - [ ] Replace glm calls
     - [ ] (Long-term) move to separate crate
   - [ ] Chunk storage:
+    - Do chunk generation on a separate thread
     - Block ID limit (16 bit is not enough)
     - Use view-box based indexing [2]
     - Chunk palettes

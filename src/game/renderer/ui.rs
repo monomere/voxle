@@ -269,7 +269,7 @@ impl UiRenderer {
 			texture,
 			uniform_bind_group,
 			view_uniform_buffer,
-			mesh: gfx::Mesh::new(gfx, &[], &[]),
+			mesh: gfx::Mesh::new(gfx, &[], &[], Some("UI Mesh")),
 			primitives: vec![]
 		}
 	}
