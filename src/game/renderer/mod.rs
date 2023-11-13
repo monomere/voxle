@@ -1,11 +1,11 @@
 use crate::gfx::{self, graph};
-
 use self::{chunk::ChunkRenderContext, ui::{UiRenderContext, UiBuilder}};
+use lazy_static::lazy_static;
 
 pub mod chunk;
 pub mod ui;
 
-pub fn load_shader_module(name: &str) -> Result<String, std::io::Error> {
+pub fn load_shader_module<F: Fn(&str) -> &str>(name: &str, get_const: Option<&F>) -> Result<String, std::io::Error> {
 	use std::io::Read;
 
 	let base_path = std::path::PathBuf::from("data/shaders");
@@ -21,16 +21,46 @@ pub fn load_shader_module(name: &str) -> Result<String, std::io::Error> {
 	let first_line = module_source.lines().next().unwrap();
 	if first_line.starts_with("//!use") {
 		for include in first_line.split_whitespace().skip(1) {
-			module_string.push_str(&*load_shader_module(include).unwrap());
+			module_string.push_str(&*load_shader_module(include, get_const).unwrap());
 		}
 	}
 
 	module_string.push_str(&module_source);
+	
+	if let Some(get_const) = get_const.as_ref() {
+	lazy_static! {
+			static ref RE: regex::Regex = regex::Regex::new(
+				r"/\*!const\(([\w_]+)\)\*/"
+			).unwrap();
+		}
+
+		let mut offset: usize = 0;
+		loop {
+			if let Some(caps) = RE.captures_at(&module_string, offset) {
+				offset += caps.get(0).unwrap().len();
+				let range = caps.get(0).unwrap().range();
+				let c = get_const(caps.get(1).unwrap().as_str());
+				module_string.replace_range(range, &c.to_owned());
+			} else {
+				break;
+			}
+		}
+	}
+
 	Ok(module_string)
 }
 
 pub fn load_shader(name: &str) -> Result<wgpu::ShaderModuleDescriptor, std::io::Error>  {
-	let shader_code = load_shader_module(name)?;
+	let shader_code = load_shader_module::<fn(&str) -> &str>(name, None)?;
+
+	Ok(wgpu::ShaderModuleDescriptor {
+		label: Some(name),
+		source: wgpu::ShaderSource::Wgsl(shader_code.into()),
+	})
+}
+
+pub fn load_shader_consts<F: Fn(&str) -> &str>(name: &str, get_const: F) -> Result<wgpu::ShaderModuleDescriptor, std::io::Error>  {
+	let shader_code = load_shader_module(name, Some(&get_const))?;
 
 	Ok(wgpu::ShaderModuleDescriptor {
 		label: Some(name),

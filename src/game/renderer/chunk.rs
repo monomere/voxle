@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::{gfx, math::*, game::texture};
+use crate::{gfx, math::*, game::{texture, chunk::CHUNK_SIZE}};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -38,8 +38,8 @@ impl BlockVertex {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct BlockPushConstants {
-	color: [f32; 4]
+struct BlockPushConsts {
+	chunk_pos: [i32; 3]
 }
 
 #[repr(C)]
@@ -371,10 +371,12 @@ impl ChunkRenderer {
 		let block_pipeline_layout = gfx.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 			label: None,
 			bind_group_layouts: &[&world_bind_group_layout, &texture_bind_group_layout],
-			push_constant_ranges: &[wgpu::PushConstantRange {
-				range: 0..std::mem::size_of::<BlockPushConstants>() as u32,
-				stages: wgpu::ShaderStages::FRAGMENT
-			}]
+			push_constant_ranges: &[
+				wgpu::PushConstantRange {
+					range: 0..std::mem::size_of::<BlockPushConsts>() as u32,
+					stages: wgpu::ShaderStages::VERTEX
+				}
+			]
 		});
 
 		let outline_pipeline_layout = gfx.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -386,11 +388,20 @@ impl ChunkRenderer {
 			}]
 		});
 
-		let block_shader = gfx.device.create_shader_module(super::load_shader("game/block").unwrap());
+		fn shader_get_const(is_black: bool) -> impl for<'a> Fn(&'a str) -> &'a str {
+			move |name: &str| -> &str {
+				match name {
+					"is_black" => if is_black { "true" } else { "false" },
+					s => s
+				}
+			}
+		}
+		let block_shader = gfx.device.create_shader_module(super::load_shader_consts("game/block", shader_get_const(false)).unwrap());
+		let wf_block_shader = gfx.device.create_shader_module(super::load_shader_consts("game/block", shader_get_const(true)).unwrap());
 		let outline_shader = gfx.device.create_shader_module(super::load_shader("game/outline").unwrap());
 
 		let block_render_pipeline = create_block_pipeline(gfx, &block_pipeline_layout, &block_shader, wgpu::PolygonMode::Fill, super::GameRenderer::DEPTH_FORMAT);
-		let block_wf_render_pipeline = create_block_pipeline(gfx, &block_pipeline_layout, &block_shader, wgpu::PolygonMode::Line, super::GameRenderer::DEPTH_FORMAT);
+		let block_wf_render_pipeline = create_block_pipeline(gfx, &block_pipeline_layout, &wf_block_shader, wgpu::PolygonMode::Line, super::GameRenderer::DEPTH_FORMAT);
 		let outline_render_pipeline = create_outline_pipeline(gfx, &outline_pipeline_layout, &outline_shader, super::GameRenderer::DEPTH_FORMAT);
 
 		let block_texture = gfx.device.create_texture(&wgpu::TextureDescriptor {
@@ -588,18 +599,15 @@ impl<'a, 'b> ChunkRenderContext<'a, 'b> {
 			ChunkRenderMode::Wireframe => &self.renderer.chunk_renderer.block_wf_render_pipeline,
 		});
 
-		let pushed = match mode {
-			ChunkRenderMode::Normal => BlockPushConstants { color: [1.0, 1.0, 1.0, 1.0] },
-			ChunkRenderMode::Wireframe => BlockPushConstants { color: [0.0, 0.0, 0.0, 1.0] },
-		};
-
 		self.render_pass.set_bind_group(0, &self.renderer.chunk_renderer.uniform_bind_group, &[]);
 		self.render_pass.set_bind_group(1, &self.renderer.chunk_renderer.texture_bind_group, &[]); // TODO: make this a GameRenderer thing
-		self.render_pass.set_push_constants(wgpu::ShaderStages::FRAGMENT, 0, bytemuck::bytes_of(&pushed));
 	}
 
 	pub fn render_chunk(&mut self, chunk: &'a super::super::chunk::Chunk) {
 		if let Some(mesh) = &chunk.mesh {
+			self.render_pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&BlockPushConsts {
+				chunk_pos: (chunk.position * CHUNK_SIZE.each_as()).0
+			}));
 			mesh.render(self.render_pass)
 		}
 	}

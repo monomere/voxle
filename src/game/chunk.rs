@@ -128,7 +128,7 @@ impl Block {
 }
 
 // 0 1 3 2 best (top face is weird in corners)
-static mut AO_INDEX_MAP_: &'static mut [u32] = &mut [0, 1, 2, 3];
+static mut AO_INDEX_MAP_: &'static mut [u32] = &mut [0, 1, 3, 2];
 
 pub fn ao_index_map() -> &'static [u32] {
 	unsafe {
@@ -233,9 +233,7 @@ impl ChunkData {
 
 					let block = self.blocks[offset];
 
-					let block_position =
-						chunk_position.each_as::<f32>() *
-						CHUNK_SIZE.each_as() +
+					let block_pos_local =
 						Vector([x, y, z]).each_as();
 
 					if block.id == 0 {
@@ -277,7 +275,7 @@ impl ChunkData {
 							let vertex = Vector(CUBE_VERTICES[index]);
 
 							vertices.push(super::renderer::chunk::BlockVertex::new(
-								vertex + block_position,
+								vertex + block_pos_local,
 								index_index as u8,
 								&ao,
 								texture_id

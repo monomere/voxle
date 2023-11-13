@@ -15,12 +15,6 @@ struct Output {
 	@location(5) @interpolate(flat) qao: vec4f,
 }
 
-fn i10_to_i32(i: u32) -> i32 {
-	// 0x3ff is 10 x 1 bits
-	// 0x200 is 1 << 9
-	return i32(((i + 0x200u) & 0x3ffu) - 0x200u);
-}
-
 fn unpack(in: Input, out: ptr<function, Output>) -> vec3f {
 
 	var aos = array<f32, 4>(
@@ -55,15 +49,23 @@ fn unpack(in: Input, out: ptr<function, Output>) -> vec3f {
 	);
 }
 
+struct VertPushConsts {
+	chunk_pos: vec3i
+}
+
+var<push_constant> pushed: VertPushConsts;
+
 @vertex
 fn vs_main(in: Input) -> Output {
 	var out: Output;
 
 	let pos = unpack(in, &out);
-	out.pos = world_camera.view_proj * vec4f(pos, 1.0);
+	out.pos = world_camera.view_proj * vec4f(vec3f(pushed.chunk_pos) + pos, 1.0);
 
 	return out;
 }
+
+
 
 @group(1) @binding(0)
 var in_tex: texture_2d_array<f32>;
@@ -71,19 +73,19 @@ var in_tex: texture_2d_array<f32>;
 @group(1) @binding(1)
 var in_samp: sampler;
 
-struct PushConsts {
-	col: vec4f
-}
-
-var<push_constant> pushed: PushConsts;
+const is_black: bool = /*!const(is_black)*/;
 
 @fragment
 fn fs_main(in: Output) -> @location(0) vec4f {
-	var col = textureSample(in_tex, in_samp, in.tex, in.tid);
+	if is_black {
+		return vec4f(0.0, 0.0, 0.0, 1.0);
+	} else {
+		var col = textureSample(in_tex, in_samp, in.tex, in.tid);
 
-	let ao0 = mix(in.qao.x, in.qao.y, in.tex.x);
-	let ao1 = mix(in.qao.z, in.qao.w, in.tex.x);
-	let ao = mix(ao1, ao0, in.tex.y);
-	
-	return pushed.col * col * ao;
+		let ao0 = mix(in.qao.x, in.qao.y, in.tex.x);
+		let ao1 = mix(in.qao.z, in.qao.w, in.tex.x);
+		let ao = mix(ao1, ao0, in.tex.y);
+		
+		return col * ao;
+	}
 }
